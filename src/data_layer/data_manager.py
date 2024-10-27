@@ -214,3 +214,37 @@ class DataLoader():
         """
         # Currently only loads CRSP data 
         return self._load_crsp_from_parquet(CACHE_PATH + freq + '/data.parquet', freq=freq)
+    def align_tensors(self, tensor1: Tensor, tensor2: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        Aligns two tensors with same frequency into one.
+        Assumes that the tensors are NOT aligned and have the same dimensions.
+        :param tensor1: First tensor.
+        :param tensor2: Second tensor.
+        :return: Aligned tensors.
+        """
+        
+        
+        raise NotImplementedError("Align tensors not implemented")
+    def merge_tensors(self, tensor1: Tensor, tensor2: Tensor) -> Tensor:
+        """
+        Merges two tensors with same frequency into one.
+        Assumes that the tensors are aligned and have the same dimensions.
+        :param tensor1: First tensor.
+        :param tensor2: Second tensor.
+        :return: Merged tensor.
+        """
+        #construct empty tensor
+
+        #find tensor with latest start
+
+        #find matching point on other tensor
+
+        #set pointers on each date
+
+        #two pointers on each array 
+
+        #add new data entry to new tensor, create merged slice if same date
+
+        #return once one its over
+        
+        raise NotImplementedError("Merge tensors not implemented")
