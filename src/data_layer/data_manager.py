@@ -225,6 +225,7 @@ class DataLoader():
         
         
         raise NotImplementedError("Align tensors not implemented")
+    
     def merge_tensors(self, tensor1: Tensor, tensor2: Tensor) -> Tensor:
         """
         Merges two tensors with same frequency into one.
@@ -233,9 +234,11 @@ class DataLoader():
         :param tensor2: Second tensor.
         :return: Merged tensor.
         """
-        #construct empty tensor
 
+        #construct empty tensor
+        res = Tensor(freq=tensor1.freq)
         #find tensor with latest start
+
 
         #find matching point on other tensor
 
@@ -246,5 +249,4 @@ class DataLoader():
         #add new data entry to new tensor, create merged slice if same date
 
         #return once one its over
-        
-        raise NotImplementedError("Merge tensors not implemented")
+        return res
