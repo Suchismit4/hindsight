@@ -85,8 +85,8 @@ def generate_sine_wave(time_steps, frequency, amplitude=1.0):
 
 def main():
     # Set parameters for data generation
-    num_time_steps = 1000
-    num_assets = 5_000
+    num_time_steps = 100
+    num_assets = 50
     num_features = 5
     
     # Generate synthetic data using sine waves
@@ -195,13 +195,29 @@ def main():
     # Benchmark comparison between custom u_roll method and pandas
     # This demonstrates the performance benefits of our custom implementation
     
+    @partial(jax.jit, static_argnames=['window_size'])
+    def sma(i: int, carry, block: jnp.ndarray, window_size: int):
+        if carry is None:
+             # Compute the sum of the first window
+            current_window_sum = block[:window_size].reshape(-1, block.shape[1], block.shape[2]).sum(axis=0)
+            return (current_window_sum * (1/window_size), current_window_sum * (1/window_size))
+        # Compute the new SMA
+        # SMA = Avg1 + Avg2 + Avgn / n
+        new_sma = (carry * (window_size - 1) + block[i]) / window_size
+        return (new_sma, new_sma)
+        
+
+        
     def benchmark_u_roll():
+        return close_tensor.u_roll(10, sma)
         # Compute the EMA using the u_roll method
-        return close_tensor.u_roll(10, ema)
+        # return close_tensor.u_roll(10, ema)
     
     def benchmark_pandas():
         df = pd.DataFrame(close_tensor.data.squeeze())
-        return df.ewm(span=10, adjust=False).mean().values
+        # Computer SMA with pandas and backfills the values
+        return df.rolling(window=10).mean().fillna(method='bfill').values
+        # return df.ewm(span=10, adjust=False),mean().values
     
     # Run benchmarks
     u_roll_time = timeit.timeit(benchmark_u_roll, number=10)
