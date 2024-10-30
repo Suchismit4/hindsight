@@ -222,10 +222,12 @@ class DataLoader():
         :param tensor2: Second tensor.
         :return: Aligned tensors.
         """
+
+        # What does aligned mean
+        
         
         
         raise NotImplementedError("Align tensors not implemented")
-    
     def merge_tensors(self, tensor1: Tensor, tensor2: Tensor) -> Tensor:
         """
         Merges two tensors with same frequency into one.
@@ -235,10 +237,20 @@ class DataLoader():
         :return: Merged tensor.
         """
 
-        #construct empty tensor
-        res = Tensor(freq=tensor1.freq)
-        #find tensor with latest start
+        merged_data = np.stack([tensor1.data, tensor2.data], axis=-1)
 
+
+        # What features are the merging tensors expected to hold
+        return Tensor(
+            data=merged_data,
+            dimensions=tensor1.dimensions,
+            feature_names=tensor1.feature_names,
+            Coordinates=tensor1.Coordinates
+        )
+
+        #construct empty tensor
+
+        #find tensor with latest start
 
         #find matching point on other tensor
 
@@ -249,4 +261,5 @@ class DataLoader():
         #add new data entry to new tensor, create merged slice if same date
 
         #return once one its over
-        return res
+        
+        raise NotImplementedError("Merge tensors not implemented")
