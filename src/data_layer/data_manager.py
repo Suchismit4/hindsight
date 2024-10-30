@@ -236,7 +236,7 @@ class DataLoader():
         :param tensor2: Second tensor.
         :return: Merged tensor.
         """
-
+        #assuming T and N are the same for both tensors
         merged_data = np.stack([tensor1.data, tensor2.data], axis=-1)
 
 
@@ -248,18 +248,3 @@ class DataLoader():
             Coordinates=tensor1.Coordinates
         )
 
-        #construct empty tensor
-
-        #find tensor with latest start
-
-        #find matching point on other tensor
-
-        #set pointers on each date
-
-        #two pointers on each array 
-
-        #add new data entry to new tensor, create merged slice if same date
-
-        #return once one its over
-        
-        raise NotImplementedError("Merge tensors not implemented")
