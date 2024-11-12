@@ -84,8 +84,9 @@ def generate_sine_wave(time_steps, frequency, amplitude=1.0):
     return amplitude * jnp.sin(2 * jnp.pi * frequency * t / time_steps)
 
 def main():
+    
     # Set parameters for data generation
-    num_time_steps = 1000
+    num_time_steps = 1_000
     num_assets = 5_000
     num_features = 5
     
@@ -124,6 +125,7 @@ def main():
         feature_names=feature_names,
         Coordinates=coords
     )
+
 
     print("\nGenerating plot of random assets...")
     plot_random_assets(characteristics_tensor)

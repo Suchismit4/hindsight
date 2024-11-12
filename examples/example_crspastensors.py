@@ -17,6 +17,7 @@ def main():
     """
     
     data_loader = DataLoader()
+    
     c_tensor, r_tensor = data_loader.load_cache(freq='D')
         
     print("Is Apple (14593) in the tensor?", 14593 in c_tensor.Coordinates.variables['asset'])
@@ -58,7 +59,7 @@ def main():
             new_ema = alpha * current_price + (1 - alpha) * carry
             return new_ema, new_ema
 
-    # Compute EMA with a window size of 12 (1 year for monthly data)
+    # Compute EMA with a window size of 20 days
     window_size = 20
     ema_prices = jax.device_get(prices.u_roll(window_size, ema))
     print("EMA Prices: \n", ema_prices)
@@ -66,14 +67,14 @@ def main():
     # Convert data to numpy for plotting
     time_coords = asset_coords.variables['time']  # Ensure accessing 'variables'
     # Convert int64 unix time to pd.DatetimeIndex
-    time_coords = pd.to_datetime(time_coords, unit='ns')  # Adjust unit if necessary
+    time_coords = pd.to_datetime(time_coords, unit='s') 
     price_data = jnp.asarray(prices.data).squeeze()
     ema_data = jnp.asarray(ema_prices.data).squeeze()
 
     # Plot the prices and moving average
     plt.figure(figsize=(16, 9), dpi=300)  # Increased figure size and DPI for higher quality
     plt.plot(time_coords, price_data, label='Price', linewidth=2)
-    plt.plot(time_coords, ema_data, label=f'EMA ({window_size} months)', linewidth=2)
+    plt.plot(time_coords, ema_data, label=f'EMA ({window_size} days)', linewidth=2)
     plt.title('Apple (14593) Stock Price and EMA', fontsize=16)
     plt.xlabel('Time', fontsize=12)
     plt.ylabel('Price', fontsize=12)

@@ -1,6 +1,7 @@
 # data_layer/tensor.py
 
 import jax
+
 from jax import numpy as jnp
 import equinox as eqx
 from typing import (
@@ -26,6 +27,12 @@ T = TypeVar('T', bound='Tensor')
 class Tensor(eqx.Module, ABC, Generic[T]):
     """
     Abstract base class representing a generalized tensor structure.
+    
+    Core intuition:
+        A Tensor is a multi-dimensional array of data, with a set of coordinates that define the
+        indices of the array. The coordinates are stored in a Coordinates object, which is a
+        subclass of Equinox's Module.
+
     Inherits from Equinox's Module to ensure compatibility with JAX's pytree system.
 
     Attributes:
@@ -45,7 +52,7 @@ class Tensor(eqx.Module, ABC, Generic[T]):
     data: np.ndarray
     dimensions: Tuple[str, ...] = eqx.static_field()
     feature_names: Tuple[str, ...] = eqx.static_field()
-    Coordinates: Coordinates = eqx.static_field()
+    Coordinates: Coordinates
 
     # Internal mappings for quick index retrieval by name
     _dimension_map: Dict[str, int] = eqx.static_field()
@@ -275,7 +282,7 @@ class Tensor(eqx.Module, ABC, Generic[T]):
         ) -> jnp.ndarray:
             t, n, j = block.shape
 
-            values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float32)
+            values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float64)
 
             # Initialize carry with the func (i == -1 case)
             initial_value, carry = func(-1, None, block, window_size)
@@ -359,7 +366,7 @@ class Tensor(eqx.Module, ABC, Generic[T]):
         # Pad the data along the time dimension
         padding_shape = (padding_length,) + other_dims
         data_padded = jnp.concatenate(
-            (data, jnp.zeros(padding_shape, dtype=data.dtype)), axis=0
+            (data, jnp.zeros(padding_shape, dtype=data.float64)), axis=0
         )
 
         # Total number of windows in the padded data

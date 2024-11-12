@@ -8,6 +8,7 @@ from typing import List, Tuple
 from functools import partial
 
 from .coords import Coordinates
+from numba import jit
 
 jax.config.update("jax_enable_x64", True)
 import equinox as eqx
@@ -15,20 +16,29 @@ import equinox as eqx
 CACHE_PATH = "~/data/cache/crsp/"
 EXCLUSION_FEATURE_LIST = ['date', 'permno', 'permco', 'hsiccd', 'hexcd', 'cusip', 'issuno', 'altprcdt']
 
-class DataSet(eqx.Module):
+class TensorCollection(eqx.Module):
     """
     Represents a collection of processed tensors, providing utilities for handling multiple tensors.
-    This class is intended to manage data prepared for specific strategies.
+    This class is intended to manage data prepared for pre-processing or feature engineering.
+    
+    Moreover, it is intended to manage and prepare data for specific strategies. There is an
+    upper-level abstraction to this which is more specific to Algorithms, and having a more 
+    specific data manager. 
+    
+    This class serves as a computational hub where derived financial metrics are calculated
+    and stored. For example, it can compute and store metrics such as book-to-market ratio,
+    price-based characteristics, and other strategy-agnostic financial ratios. These computations
+    are performed here to maintain a clear separation between raw data processing and 
+    strategy-specific operations.
 
-    Methods and attributes can be added to facilitate operations such as data splitting,
-    feature engineering, and batching.
+    The upper-level abstraction (e.g., a Algorithm layer) would then use this TensorCollection
+    to create more specialized, strategy-specific DataSets.
     """
     def __init__(self):
         super().__init__()
-        self.tensors = {}
-        # Future initialization code (e.g., loading tensors, setting up strategies)
-        
-    # Additional methods for loading other types of data can be added here
+        raise NotImplementedError("This class is not yet implemented.")
+
+    # Additional methods for other financial computations
 
 class DataLoader():
     """
@@ -89,6 +99,13 @@ class DataLoader():
         Returns:
             np.ndarray: Populated tensor as a NumPy array.
         """
+        
+        @jit(nopython=True)
+        def fast_populate(date_indices, permno_indices, feature_values, tensor):
+            for i in range(len(date_indices)):
+                tensor[date_indices[i], permno_indices[i], :] = feature_values[i]
+            return tensor
+        
         T, N, J = tensor_shape
 
         # Create index mappings for dates and permnos
@@ -112,7 +129,8 @@ class DataLoader():
         tensor = np.full((T, N, J), np.nan, dtype=np.float32)
 
         # Assign feature values using advanced indexing
-        tensor[date_indices, permno_indices, :] = feature_values
+        # tensor[date_indices, permno_indices, :] = feature_values
+        tensor = fast_populate(date_indices, permno_indices, feature_values, tensor)
 
         # Replace infinite values with NaN
         tensor = np.where(np.isinf(tensor), np.nan, tensor)
@@ -147,8 +165,9 @@ class DataLoader():
         # Retain only necessary columns to reduce memory usage
         df = df[['date', 'permno'] + column_names]
         
-        # Use the unique dates from the DataFrame
+        # Use the unique dates from the DataFrame and convert to int64 Unix time
         date_range = np.sort(df['date'].unique())
+        date_range_unix = date_range.astype(np.int64) // 10**9  # Convert to Unix timestamp in seconds
         
         # Define features for characteristics and returns
         c_features = [col for col in column_names if col != 'ret']
@@ -162,7 +181,7 @@ class DataLoader():
 
         # Create coordinates for characteristics
         c_coord_vars = {
-            'time': date_range,
+            'time': date_range_unix,  # Use Unix timestamp
             'asset': unique_permnos,
             'feature': c_features
         }
@@ -187,7 +206,7 @@ class DataLoader():
         
         # Create coordinates for returns
         r_coord_vars = {
-            'time': date_range,
+            'time': date_range_unix,  # Use Unix timestamp
             'asset': unique_permnos,
             'feature': r_features
         }
