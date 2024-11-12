@@ -103,9 +103,7 @@ def main():
         assets_returns, 
         freq='D'
     )
-    
-    print("\nReturns DataFrame shape:", returns_df.shape)
-    
+        
     # Create characteristics DataFrame
     characteristics_df = create_characteristics_dataframe(
         start_date, 
@@ -114,45 +112,43 @@ def main():
         characteristics, 
         freq='Q'
     )
-    
-    print("\nCharacteristics DataFrame shape:", characteristics_df.shape)
-    
+        
     # Use from_table to create DataArrays
     returns_data = DataArrayDateTimeAccessor.from_table(
         returns_df,
         time_column='time',
         asset_column='asset',
-        feature_columns=['returns']
+        feature_columns=['returns'],
+        frequency='D'
     )
     
-    # returns_data: xr.DataArray
-
     
-    characteristics_data = DataArrayDateTimeAccessor.from_table(
-        characteristics_df,
-        time_column='time',
-        asset_column='asset',
-        feature_columns=characteristics
-    )
+    # characteristics_data = DataArrayDateTimeAccessor.from_table(
+    #     characteristics_df,
+    #     time_column='time',
+    #     asset_column='asset',
+    #     feature_columns=characteristics,
+    #     frequency='Q'
+    # )
     
     print("\nReturns DataArray shape:", returns_data.shape)
-    print("Characteristics DataArray shape:", characteristics_data.shape)
+    # print("Characteristics DataArray shape:", characteristics_data.shape)
         
-    # Test alignment between returns data and characteristics data
-    print("\nAligning returns data with characteristics data...")
-    # Use the dt accessor to align datasets (assuming align_with is properly implemented)
-    aligned_data = returns_data.dt.align_with(
-        characteristics_data,
-        method='outer',
-        freq_method='ffill'
-    )
+    # # Test alignment between returns data and characteristics data
+    # print("\nAligning returns data with characteristics data...")
+    # # Use the dt accessor to align datasets (assuming align_with is properly implemented)
+    # aligned_data = returns_data.dt.align_with(
+    #     characteristics_data,
+    #     method='outer',
+    #     freq_method='ffill'
+    # )
     
-    print("\nSuccessfully aligned datasets")
-    print("Merged Data:", aligned_data)
+    # print("\nSuccessfully aligned datasets")
+    # print("Merged Data:", aligned_data)
     
-    print("\nSample of merged data:")
-    # For demonstration purposes, we'll just print the first few entries
-    print(merged_data.isel(time=slice(0,5)).to_dataframe().head())
+    # print("\nSample of merged data:")
+    # # For demonstration purposes, we'll just print the first few entries
+    # print(merged_data.isel(time=slice(0,5)).to_dataframe().head())
 
 if __name__ == "__main__":
     main()

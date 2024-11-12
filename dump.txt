@@ -1,0 +1,8 @@
+/home/ubuntu/projects/hindsight/src/timeseries.py:430: AccessorRegistrationWarning: registration of accessor <class 'src.timeseries.DataArrayDateTimeAccessor'> under name 'dt' for type <class 'xarray.core.dataarray.DataArray'> is overriding a preexisting attribute with the same name.
+  @xr.register_dataarray_accessor('dt')
+/home/ubuntu/projects/hindsight/main.py:63: FutureWarning: 'Q' is deprecated and will be removed in a future version, please use 'QE' instead.
+  dates = pd.date_range(start_date, end_date, freq=freq)
+An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+Creating sample returns and characteristics datasets...
+
+Returns DataArray shape: (6, 4, 12, 31, 1, 5, 1)

@@ -151,132 +151,146 @@ class DateTimeAccessorBase:
         data: pd.DataFrame,
         time_column: str = 'time',
         asset_column: str = 'asset',
-        feature_columns: Optional[List[str]] = None
+        feature_columns: Optional[List[str]] = None,
+        frequency: Optional[str] = None
     ) -> xr.DataArray:
         """
-        Creates a DataArray from a table (DataFrame), ensuring the time dimension is multi-dimensional
-        with fixed sizes for Year (Y), Quarter (Q), Month (M), Day (D), and Intraday (I).
+        Creates a DataArray from a table (DataFrame), with a fixed-size time dimension structure.
+        All months have 31 days, all quarters have 3 months, etc. Invalid dates or missing
+        observations are filled with NaN/NAT values.
 
         Parameters:
             data (pd.DataFrame): The input data table.
             time_column (str): Name of the time column in the data.
             asset_column (str): Name of the asset column in the data.
             feature_columns (list of str): List of feature columns.
+            frequency (str): Data frequency ('D', 'M', 'Q', 'Y'). Will be inferred if not provided.
 
         Returns:
-            xr.DataArray: The resulting DataArray with dimensions ('time', 'asset', 'feature'),
-                          and data stored as a JAX array.
+            xr.DataArray: The resulting DataArray with fixed-size dimensions:
+                - year: Unique years in data
+                - quarter: 4 quarters
+                - month: 12 months
+                - day: 31 days
+                - intraday: 1 slot (for future extension)
+                - asset: Unique assets
+                - feature: Data features
         """
         data = data.copy()
         data[time_column] = pd.to_datetime(data[time_column])
-        
-        # Extract time components
-        data['year'] = data[time_column].dt.year
-        data['quarter'] = data[time_column].dt.quarter
-        data['month'] = data[time_column].dt.month
-        data['day'] = data[time_column].dt.day
-        data['intraday'] = 0  # Since no intraday data, set to 0
 
-        # Define time dimensions with fixed sizes
-        years = np.sort(data['year'].unique())
-        quarters = np.array([1, 2, 3, 4])  # 4 quarters
-        months = np.arange(1, 4)  # Months 1 to 3 within each quarter
-        days = np.arange(1, 32)  # Days 1 to 31
-        intraday_levels = np.array([0])  # Single intraday level
-        
-        # Create mappings for months within quarters
-        # Quarter 1: Months 1-3, Quarter 2: Months 4-6, etc.
-        quarter_month_map = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}
-        
-        # Map actual months to month indices within quarters
-        data['month_in_quarter'] = data.apply(
-            lambda row: quarter_month_map[row['quarter']].index(row['month'] % 12 or 12) + 1,
-            axis=1
-        )
-        
-        # Update months to be indices within quarters
-        data['month'] = data['month_in_quarter']
-        data.drop(columns=['month_in_quarter'], inplace=True)
+        # Infer or validate frequency
+        if frequency is None:
+            inferred_freq = pd.infer_freq(data[time_column].sort_values())
+            if inferred_freq is None:
+                raise ValueError("Could not infer frequency from the time column. Please specify the frequency explicitly.")
+            frequency = inferred_freq[0]
+        else:
+            frequency = frequency[0].upper()
+
+        freq_to_components = {
+            'D': ['year', 'quarter', 'month', 'day'],
+            'M': ['year', 'quarter', 'month'],
+            'Q': ['year', 'quarter'],
+            'A': ['year'],
+            'Y': ['year'],
+        }
+
+        if frequency not in freq_to_components:
+            raise ValueError(f"Unsupported frequency '{frequency}'. Supported frequencies are D, M, Q, A/Y.")
+
+        time_components = freq_to_components[frequency]
+
+        # Extract relevant time components
+        data['year'] = data[time_column].dt.year
+        if 'quarter' in time_components:
+            data['quarter'] = data[time_column].dt.quarter
+        if 'month' in time_components:
+            data['month'] = data[time_column].dt.month
+        if 'day' in time_components:
+            data['day'] = data[time_column].dt.day
+        data['intraday'] = 0  # Since no intraday data
+
+        # Define ranges for time components
+        time_ranges = {}
+        time_ranges['year'] = np.sort(data['year'].unique())
+        time_ranges['quarter'] = np.array([1, 2, 3, 4]) if 'quarter' in time_components else np.array([1])
+        time_ranges['month'] = np.arange(1, 13) if 'month' in time_components else np.array([1])
+        time_ranges['day'] = np.arange(1, 32) if 'day' in time_components else np.array([1])
+        time_ranges['intraday'] = np.array([0])
 
         # Prepare asset coordinates
         assets = np.sort(data[asset_column].unique())
 
-        # If feature_columns is None, select all columns except time_column and asset_column
         # Prepare feature columns
         if feature_columns is None:
-            feature_columns = [
-                col for col in data.columns
-                if col not in [time_column, asset_column, 'year', 'quarter', 'month', 'day', 'intraday']
-            ]
+            time_cols = [time_column, 'year', 'quarter', 'month', 'day', 'intraday']
+            feature_columns = [col for col in data.columns if col not in time_cols + [asset_column]]
 
-        # Create a MultiIndex from all dimensions
-        index = pd.MultiIndex.from_product(
-            [years, quarters, months, days, intraday_levels, assets],
-            names=['year', 'quarter', 'month', 'day', 'intraday', asset_column]
-        )
+        # Create MultiIndex for data reindexing (including assets)
+        index_components = [time_ranges[comp] for comp in ['year', 'quarter', 'month', 'day', 'intraday']]
+        index_components.append(assets)
+        index_names = ['year', 'quarter', 'month', 'day', 'intraday', asset_column]
+        index = pd.MultiIndex.from_product(index_components, names=index_names)
 
-        # Set data index to the multi-dimensional time and asset dimensions
-        data.set_index(['year', 'quarter', 'month', 'day', 'intraday', asset_column], inplace=True)
-        # Reindex data to align with the complete index
+        # Set DataFrame index and reindex
+        data.set_index(index_names, inplace=True)
         data = data.reindex(index)
 
-        # Prepare data values array
-        data_values = data[feature_columns].values
+        # --- Fix starts here ---
+        # Create time index without assets
+        index_time_components = [time_ranges[comp] for comp in ['year', 'quarter', 'month', 'day', 'intraday']]
+        index_time_names = ['year', 'quarter', 'month', 'day', 'intraday']
+        index_time = pd.MultiIndex.from_product(index_time_components, names=index_time_names)
 
-        # Reshape data values to match the dimensions
-        shape = (
-            len(years),
-            len(quarters),
-            len(months),
-            len(days),
-            len(intraday_levels),
-            len(assets),
-            len(feature_columns)
-        )
-        data_values = data_values.reshape(shape)
+        # Create time_dict from index_time
+        time_dict = {comp: index_time.get_level_values(comp) for comp in ['year', 'month', 'day'] if comp in time_components}
+        if 'month' not in time_components:
+            time_dict['month'] = 1
+        if 'day' not in time_components:
+            time_dict['day'] = 1
 
-        # Convert data values to JAX array
+        time_index = pd.to_datetime(time_dict, errors='coerce')
+
+        # Create the time coordinate
+        shape = tuple(len(time_ranges[comp]) for comp in ['year', 'quarter', 'month', 'day', 'intraday'])
+        time_coord = time_index.values.reshape(shape)
+        # --- Fix ends here ---
+
+        # Prepare data values
+        data_shape = shape + (len(assets),)
+        data_values = data[feature_columns].values.reshape(data_shape + (len(feature_columns),))
         data_values = jnp.array(data_values)
-        
-        # Create coordinates dictionary for xarray DataArray
-        coords = {
-            'year': years,
-            'quarter': quarters,
-            'month': months,
-            'day': days,
-            'intraday': intraday_levels,
-            'asset': assets,
-            'feature': feature_columns
-        }
 
-        # Create time coordinate DataArray 
-        time_coord = xr.DataArray(
-            times, # 
-            dims=['time'],
-            coords={'time': times}
-        )
+        # Create coordinates dictionary
+        coords = {comp: time_ranges[comp] for comp in ['year', 'quarter', 'month', 'day', 'intraday']}
+        coords['asset'] = assets
+        coords['feature'] = feature_columns
 
-        # Create TimeSeriesIndex
-        ts_index = TimeSeriesIndex(time_coord)
-
-        # Create DataArray with coordinates and dimensions
+        # Create DataArray
+        dims = ['year', 'quarter', 'month', 'day', 'intraday', 'asset', 'feature']
         da = xr.DataArray(
             data_values,
-            coords={
-                'time': times,
-                'asset': assets,
-                'feature': feature_columns
-            },
-            dims=['time', 'asset', 'feature']
+            coords=coords,
+            dims=dims
         )
 
-        # Attach TimeSeriesIndex to time coordinate
+        # Add time coordinate
+        da.coords['time'] = (dims[:-2], time_coord)
+
+        # Create TimeSeriesIndex
+        time_coord_da = xr.DataArray(
+            time_coord,
+            coords={k: da.coords[k] for k in dims[:-2]},
+            dims=dims[:-2]
+        )
+        ts_index = TimeSeriesIndex(time_coord_da)
         da.coords['time'].attrs['indexes'] = {'time': ts_index}
 
         return da
-        
 
-        
+
+
     def sel(self, time):
         """
         Selects data corresponding to the given time(s) using TimeSeriesIndex.
