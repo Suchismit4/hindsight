@@ -9,8 +9,6 @@ This file ensures that when the `src` package is imported, the necessary compone
 """
 
 # Import specific modules or classes from the src package
-from src.data_layer.coords import Coordinates
-from src.data_layer.tensor import Tensor, ReturnsTensor, CharacteristicsTensor
-from src.data_layer.data_manager import DataLoader
+from src.timeseries import *
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"

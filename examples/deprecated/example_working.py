@@ -17,12 +17,5 @@ def main():
     Main function to demonstrate the loading cached CRSP data using DataLoader.
     """
     
-    data_loader = DataLoader()
-    
-    tensor = Tensor(data=jnp.array(),
-                    Coordinates=Coordinates())
-    
-    print(apple)
-    
 if __name__ == "__main__":
     main()

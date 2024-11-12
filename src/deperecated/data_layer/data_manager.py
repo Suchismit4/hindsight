@@ -16,6 +16,7 @@ import equinox as eqx
 CACHE_PATH = "~/data/cache/crsp/"
 EXCLUSION_FEATURE_LIST = ['date', 'permno', 'permco', 'hsiccd', 'hexcd', 'cusip', 'issuno', 'altprcdt']
 
+
 class TensorCollection(eqx.Module):
     """
     Represents a collection of processed tensors, providing utilities for handling multiple tensors.
@@ -34,6 +35,8 @@ class TensorCollection(eqx.Module):
     The upper-level abstraction (e.g., a Algorithm layer) would then use this TensorCollection
     to create more specialized, strategy-specific DataSets.
     """
+
+    
     def __init__(self):
         super().__init__()
         raise NotImplementedError("This class is not yet implemented.")
