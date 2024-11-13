@@ -122,17 +122,44 @@ def main():
         frequency='D'
     )
     
+    # dates = pd.date_range('2023-01-01', '2023-12-31', freq='D')
+    # df = pd.DataFrame({
+    #     'time': dates,
+    #     'asset': 'GOOGL',
+    #     'value1': np.random.rand(len(dates)),
+    #     'value2': np.random.rand(len(dates))
+    # })
+
+    # # Create DataArray with single variable
+    # d1 = DatasetDateTimeAccessor.from_table(df, feature_columns=['value1'])
+    # print(d1.dt.sel('2023-06-15'))
     
-    # characteristics_data = DataArrayDateTimeAccessor.from_table(
-    #     characteristics_df,
-    #     time_column='time',
-    #     asset_column='asset',
-    #     feature_columns=characteristics,
-    #     frequency='Q'
-    # )
+    # dates = pd.date_range('2023-01-01', '2023-12-31', freq='D')
+    # df = pd.DataFrame({
+    #     'time': np.repeat(dates, 2),
+    #     'asset': ['GOOGL', 'APPLE'] * len(dates),
+    #     'value1': np.random.rand(len(dates) * 2),
+    #     'value2': np.random.rand(len(dates) * 2)
+    # })
+
+    # # Create DataArray with single variable
+    # d1 = DatasetDateTimeAccessor.from_table(df, feature_columns=['value1'])
+    # print(d1.dt.sel('2023-06-15'))
+    
+    
+    characteristics_data = DataArrayDateTimeAccessor.from_table(
+        characteristics_df,
+        time_column='time',
+        asset_column='asset',
+        feature_columns=characteristics,
+        frequency='Q'
+    )
     
     print("\nReturns DataArray shape:", returns_data.shape)
-    # print("Characteristics DataArray shape:", characteristics_data.shape)
+    print(returns_data.dt.sel("2019-01-01"))
+    
+    print("Characteristics DataArray shape:", characteristics_data.shape)
+    print(returns_data.dt.sel("2019-01-01"))
         
     # # Test alignment between returns data and characteristics data
     # print("\nAligning returns data with characteristics data...")

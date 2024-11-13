@@ -93,14 +93,30 @@ class TimeSeriesIndex:
         else:
             labels_array = pd.to_datetime([labels]).to_numpy()
         
-        flat_indices = self.time_to_index.reindex(labels_array)
-        if flat_indices.isnull().any():
-            missing = labels_array[pd.isnull(flat_indices)]
-            raise KeyError(f"Dates {missing} not found in index")
-                
-        multi_indices = np.unravel_index(flat_indices.values.astype(int), self.shape)
-        dim_names = self.time_coord.dims
+        # Initialize a list to collect flat indices
+        flat_indices = []
+        for label in labels_array:
+            try:
+                locs = self.time_to_index.index.get_loc(label)
+                if isinstance(locs, slice):
+                    indices = self.time_to_index.iloc[locs].values
+                elif isinstance(locs, np.ndarray):
+                    indices = self.time_to_index.iloc[locs].values
+                elif isinstance(locs, int):
+                    indices = [self.time_to_index.iloc[locs]]
+                else:
+                    raise KeyError(f"Date {label} not found in index")
+                flat_indices.extend(indices)
+            except KeyError:
+                raise KeyError(f"Date {label} not found in index")
         
+        if not flat_indices:
+            raise KeyError(f"Dates {labels_array} not found in index")
+        
+        flat_indices = np.array(flat_indices)
+        multi_indices = np.unravel_index(flat_indices.astype(int), self.shape)
+        dim_names = self.time_coord.dims
+
         return dict(zip(dim_names, multi_indices))
 
 
@@ -142,8 +158,10 @@ class DateTimeAccessorBase:
             xarray_obj (Union[xr.Dataset, xr.DataArray]): The xarray object to be accessed.
         """
         self._obj = xarray_obj
-        self._dims = self._infer_dimensions()
-        self._metadata = self._create_metadata()
+        
+        # TODO: Fix infer_dimensions() to infer the time from the attributes.
+        # self._dims = self._infer_dimensions()
+        # self._metadata = self._create_metadata()
         
     @classmethod
     def from_table(
@@ -152,144 +170,120 @@ class DateTimeAccessorBase:
         time_column: str = 'time',
         asset_column: str = 'asset',
         feature_columns: Optional[List[str]] = None,
-        frequency: Optional[str] = None
+        frequency: Optional[str] = 'D'
     ) -> xr.DataArray:
         """
-        Creates a DataArray from a table (DataFrame), with a fixed-size time dimension structure.
-        All months have 31 days, all quarters have 3 months, etc. Invalid dates or missing
-        observations are filled with NaN/NAT values.
+        Creates a DataArray from a table (DataFrame), with fixed-size time dimensions.
 
         Parameters:
             data (pd.DataFrame): The input data table.
             time_column (str): Name of the time column in the data.
             asset_column (str): Name of the asset column in the data.
-            feature_columns (list of str): List of feature columns.
-            frequency (str): Data frequency ('D', 'M', 'Q', 'Y'). Will be inferred if not provided.
+            feature_columns (list of str, optional): List of value columns.
 
         Returns:
-            xr.DataArray: The resulting DataArray with fixed-size dimensions:
+            xr.DataArray: The resulting DataArray with dimensions:
                 - year: Unique years in data
-                - quarter: 4 quarters
                 - month: 12 months
                 - day: 31 days
-                - intraday: 1 slot (for future extension)
                 - asset: Unique assets
-                - feature: Data features
+                - feature: Data features (if multiple value columns)
         """
+        # Make a copy to avoid modifying the original DataFrame
         data = data.copy()
+        # Convert the time column to datetime
         data[time_column] = pd.to_datetime(data[time_column])
 
-        # Infer or validate frequency
-        if frequency is None:
-            inferred_freq = pd.infer_freq(data[time_column].sort_values())
-            if inferred_freq is None:
-                raise ValueError("Could not infer frequency from the time column. Please specify the frequency explicitly.")
-            frequency = inferred_freq[0]
-        else:
-            frequency = frequency[0].upper()
+        # Extract time components
+        dates = data[time_column]
+        data['year'] = dates.dt.year
+        data['month'] = dates.dt.month
+        data['day'] = dates.dt.day
 
-        freq_to_components = {
-            'D': ['year', 'quarter', 'month', 'day'],
-            'M': ['year', 'quarter', 'month'],
-            'Q': ['year', 'quarter'],
-            'A': ['year'],
-            'Y': ['year'],
-        }
-
-        if frequency not in freq_to_components:
-            raise ValueError(f"Unsupported frequency '{frequency}'. Supported frequencies are D, M, Q, A/Y.")
-
-        time_components = freq_to_components[frequency]
-
-        # Extract relevant time components
-        data['year'] = data[time_column].dt.year
-        if 'quarter' in time_components:
-            data['quarter'] = data[time_column].dt.quarter
-        if 'month' in time_components:
-            data['month'] = data[time_column].dt.month
-        if 'day' in time_components:
-            data['day'] = data[time_column].dt.day
-        data['intraday'] = 0  # Since no intraday data
-
-        # Define ranges for time components
-        time_ranges = {}
-        time_ranges['year'] = np.sort(data['year'].unique())
-        time_ranges['quarter'] = np.array([1, 2, 3, 4]) if 'quarter' in time_components else np.array([1])
-        time_ranges['month'] = np.arange(1, 13) if 'month' in time_components else np.array([1])
-        time_ranges['day'] = np.arange(1, 32) if 'day' in time_components else np.array([1])
-        time_ranges['intraday'] = np.array([0])
+        # Prepare the unique ranges for each time component
+        years = np.sort(data['year'].unique())
+        months = np.arange(1, 13)  # Fixed-size months (1 to 12)
+        days = np.arange(1, 32)    # Fixed-size days (1 to 31)
 
         # Prepare asset coordinates
         assets = np.sort(data[asset_column].unique())
 
-        # Prepare feature columns
+        # Determine feature columns if not provided
         if feature_columns is None:
-            time_cols = [time_column, 'year', 'quarter', 'month', 'day', 'intraday']
-            feature_columns = [col for col in data.columns if col not in time_cols + [asset_column]]
+            time_cols = [time_column, 'year', 'month', 'day', asset_column]
+            feature_columns = [col for col in data.columns if col not in time_cols]
 
-        # Create MultiIndex for data reindexing (including assets)
-        index_components = [time_ranges[comp] for comp in ['year', 'quarter', 'month', 'day', 'intraday']]
-        index_components.append(assets)
-        index_names = ['year', 'quarter', 'month', 'day', 'intraday', asset_column]
-        index = pd.MultiIndex.from_product(index_components, names=index_names)
+        # Create the MultiIndex for reindexing
+        index_components = [years, months, days, assets]
+        index_names = ['year', 'month', 'day', asset_column]
+        full_index = pd.MultiIndex.from_product(index_components, names=index_names)
 
-        # Set DataFrame index and reindex
+        # Set DataFrame index and reindex to include all possible combinations
         data.set_index(index_names, inplace=True)
-        data = data.reindex(index)
+        data = data.reindex(full_index)
 
-        # --- Fix starts here ---
-        # Create time index without assets
-        index_time_components = [time_ranges[comp] for comp in ['year', 'quarter', 'month', 'day', 'intraday']]
-        index_time_names = ['year', 'quarter', 'month', 'day', 'intraday']
-        index_time = pd.MultiIndex.from_product(index_time_components, names=index_time_names)
+        # Create the time coordinate array
+        time_index = pd.to_datetime({
+            'year': full_index.get_level_values('year'),
+            'month': full_index.get_level_values('month'),
+            'day': full_index.get_level_values('day')
+        }, errors='coerce')
 
-        # Create time_dict from index_time
-        time_dict = {comp: index_time.get_level_values(comp) for comp in ['year', 'month', 'day'] if comp in time_components}
-        if 'month' not in time_components:
-            time_dict['month'] = 1
-        if 'day' not in time_components:
-            time_dict['day'] = 1
+        # Reshape the time data to match the dimensions
+        shape = (len(years), len(months), len(days), len(assets))
+        time_data = time_index.values.reshape(shape)
 
-        time_index = pd.to_datetime(time_dict, errors='coerce')
-
-        # Create the time coordinate
-        shape = tuple(len(time_ranges[comp]) for comp in ['year', 'quarter', 'month', 'day', 'intraday'])
-        time_coord = time_index.values.reshape(shape)
-        # --- Fix ends here ---
-
-        # Prepare data values
-        data_shape = shape + (len(assets),)
-        data_values = data[feature_columns].values.reshape(data_shape + (len(feature_columns),))
-        data_values = jnp.array(data_values)
-
-        # Create coordinates dictionary
-        coords = {comp: time_ranges[comp] for comp in ['year', 'quarter', 'month', 'day', 'intraday']}
-        coords['asset'] = assets
-        coords['feature'] = feature_columns
-
-        # Create DataArray
-        dims = ['year', 'quarter', 'month', 'day', 'intraday', 'asset', 'feature']
-        da = xr.DataArray(
-            data_values,
-            coords=coords,
-            dims=dims
+        # Create the time coordinate DataArray
+        time_coord = xr.DataArray(
+            data=time_data,
+            coords={
+                'year': years,
+                'month': months,
+                'day': days,
+                'asset': assets
+            },
+            dims=['year', 'month', 'day', 'asset']
         )
 
-        # Add time coordinate
-        da.coords['time'] = (dims[:-2], time_coord)
+        # Create the TimeSeriesIndex
+        ts_index = TimeSeriesIndex(time_coord)
 
-        # Create TimeSeriesIndex
-        time_coord_da = xr.DataArray(
-            time_coord,
-            coords={k: da.coords[k] for k in dims[:-2]},
-            dims=dims[:-2]
-        )
-        ts_index = TimeSeriesIndex(time_coord_da)
+        # Prepare the data values
+        if len(feature_columns) == 1:
+            # Single value column
+            var_data = data[feature_columns[0]].values.reshape(shape)
+            da = xr.DataArray(
+                data=var_data,
+                coords={
+                    'year': years,
+                    'month': months,
+                    'day': days,
+                    'asset': assets,
+                    'time': (['year', 'month', 'day', 'asset'], time_data)
+                },
+                dims=['year', 'month', 'day', 'asset'],
+                name=feature_columns[0]
+            )
+        else:
+            # Multiple value columns
+            var_data = data[feature_columns].values.reshape(shape + (len(feature_columns),))
+            da = xr.DataArray(
+                data=var_data,
+                coords={
+                    'year': years,
+                    'month': months,
+                    'day': days,
+                    'asset': assets,
+                    'feature': feature_columns,
+                    'time': (['year', 'month', 'day', 'asset'], time_data)
+                },
+                dims=['year', 'month', 'day', 'asset', 'feature']
+            )
+
+        # Attach the TimeSeriesIndex to the time coordinate
         da.coords['time'].attrs['indexes'] = {'time': ts_index}
 
         return da
-
-
 
     def sel(self, time):
         """
@@ -312,9 +306,13 @@ class DateTimeAccessorBase:
             Union[xr.DataArray, xr.Dataset]: The time-indexed data.
         """
         # Since data is already time-indexed, we might not need to stack.
-        # This method can be customized if needed.
-        return self._obj
-
+        # data = self._obj.stack(time=('year', 'quarter', 'month', 'day'))
+        time_values = data.coords['time'].values
+        
+        if isinstance(self._obj, xr.Dataset):
+            return xr.Dataset({var: ('time', data[var].values) for var in self._obj.data_vars}, coords={'time': time_values})
+        return xr.DataArray(data.values, coords={'time': time_values}, dims=['time'], name=data.name)
+    
     def _infer_dimensions(self) -> DataDimensions:
         """
         Determines the positions of time, asset, and characteristic dimensions in the data array.
@@ -323,9 +321,9 @@ class DateTimeAccessorBase:
             DataDimensions: An object containing the positions of each dimension.
         """
         dims = list(self._obj.dims)  # List of dimension names
-
         # Find time dimension
         time_dim = None
+
         for i, dim in enumerate(dims):
             # Check if the coordinate values are datetime-like
             coord_values = self._obj.coords.get(dim, None)
