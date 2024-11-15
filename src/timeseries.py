@@ -230,7 +230,7 @@ class DateTimeAccessorBase:
         }, errors='coerce')
 
         # Reshape the time data to match the dimensions
-        shape = (len(years), len(months), len(days), len(assets))
+        shape = (len(years), len(months), len(days), len(assets)) # Y, M, D
         time_data = time_index.values.reshape(shape)
 
         # Create the time coordinate DataArray

@@ -92,6 +92,7 @@ def main():
     # Assets for returns and characteristics (intentionally different)
     assets_returns = ['AAPL', 'MSFT', 'GOOG', 'AMZN', 'FB']
     assets_characteristics = ['AAPL', 'MSFT', 'TSLA', 'NFLX']
+    
     characteristics = ['PE_ratio', 'Market_Cap']
     
     print("Creating sample returns and characteristics datasets...")
@@ -156,6 +157,7 @@ def main():
     )
     
     print("\nReturns DataArray shape:", returns_data.shape)
+    
     print(returns_data.dt.sel("2019-01-01"))
     
     print("Characteristics DataArray shape:", characteristics_data.shape)
