@@ -1,0 +1,10 @@
+# Raw Data sources
+
+CRSPEquities: 
+  type: offline
+  description: "Loads CRSP data from offline file path."
+  path: ""
+
+YFinance: 
+  type: online
+  description: "Loads Yahoo Finance data."

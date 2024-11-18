@@ -49,6 +49,22 @@ class TimeIndexMetadata:
     dims: Dict[str, int]
     frequency: FrequencyType
     shape: Tuple[int, ...]
+    
+class TimeSeriesOps:
+    """
+    Core operations for multi-dimensional panel data processing.
+    Handles arrays with Time x Assets x Characteristics structure.
+    """
+    
+    @staticmethod
+    def merge_panel_data(
+        datas: List[Union[xr.DataArray, xr.Dataset]]
+    ) -> xr.DataArray:
+        """
+        Merges two panel data arrays along the asset dimension, aligning assets and time indices.
+        If data arrays have a 'feature' dimension, combines along that dimension.
+        """
+        raise NotImplementedError("Merging is not supported yet.")
 
 
 class TimeSeriesIndex:
@@ -118,24 +134,6 @@ class TimeSeriesIndex:
         dim_names = self.time_coord.dims
 
         return dict(zip(dim_names, multi_indices))
-
-
-class TimeSeriesOps:
-    """
-    Core operations for multi-dimensional panel data processing.
-    Handles arrays with Time x Assets x Characteristics structure.
-    """
-
-    @staticmethod
-    def merge_panel_data(
-        data1: xr.DataArray,
-        data2: xr.DataArray
-    ) -> xr.DataArray:
-        """
-        Merges two panel data arrays along the asset dimension, aligning assets and time indices.
-        If data arrays have a 'feature' dimension, combines along that dimension.
-        """
-        raise NotImplementedError("Merging is not supported yet.")
 
 
 class DateTimeAccessorBase:
@@ -223,15 +221,17 @@ class DateTimeAccessorBase:
         data = data.reindex(full_index)
 
         # Create the time coordinate array
+        # Extract unique time combinations to avoid duplicates
+        unique_time = full_index.droplevel(asset_column).unique()
         time_index = pd.to_datetime({
-            'year': full_index.get_level_values('year'),
-            'month': full_index.get_level_values('month'),
-            'day': full_index.get_level_values('day')
+            'year': unique_time.get_level_values('year'),
+            'month': unique_time.get_level_values('month'),
+            'day': unique_time.get_level_values('day')
         }, errors='coerce')
 
-        # Reshape the time data to match the dimensions
-        shape = (len(years), len(months), len(days), len(assets)) # Y, M, D
-        time_data = time_index.values.reshape(shape)
+        # Reshape the time data to match the dimensions without 'asset'
+        shape_time = (len(years), len(months), len(days))
+        time_data = time_index.values.reshape(shape_time)
 
         # Create the time coordinate DataArray
         time_coord = xr.DataArray(
@@ -240,18 +240,18 @@ class DateTimeAccessorBase:
                 'year': years,
                 'month': months,
                 'day': days,
-                'asset': assets
             },
-            dims=['year', 'month', 'day', 'asset']
+            dims=['year', 'month', 'day']
         )
 
         # Create the TimeSeriesIndex
         ts_index = TimeSeriesIndex(time_coord)
 
         # Prepare the data values
+        shape_data = (len(years), len(months), len(days), len(assets))
         if len(feature_columns) == 1:
             # Single value column
-            var_data = data[feature_columns[0]].values.reshape(shape)
+            var_data = data[feature_columns[0]].values.reshape(shape_data)
             da = xr.DataArray(
                 data=var_data,
                 coords={
@@ -259,14 +259,14 @@ class DateTimeAccessorBase:
                     'month': months,
                     'day': days,
                     'asset': assets,
-                    'time': (['year', 'month', 'day', 'asset'], time_data)
+                    'time': (['year', 'month', 'day'], time_data)
                 },
                 dims=['year', 'month', 'day', 'asset'],
                 name=feature_columns[0]
             )
         else:
             # Multiple value columns
-            var_data = data[feature_columns].values.reshape(shape + (len(feature_columns),))
+            var_data = data[feature_columns].values.reshape(shape_data + (len(feature_columns),))
             da = xr.DataArray(
                 data=var_data,
                 coords={
@@ -275,7 +275,7 @@ class DateTimeAccessorBase:
                     'day': days,
                     'asset': assets,
                     'feature': feature_columns,
-                    'time': (['year', 'month', 'day', 'asset'], time_data)
+                    'time': (['year', 'month', 'day'], time_data)
                 },
                 dims=['year', 'month', 'day', 'asset', 'feature']
             )
@@ -284,6 +284,7 @@ class DateTimeAccessorBase:
         da.coords['time'].attrs['indexes'] = {'time': ts_index}
 
         return da
+
 
     def sel(self, time):
         """

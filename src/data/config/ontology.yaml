@@ -1,0 +1,29 @@
+# Base Data Types
+market_value:
+  type: base
+  description: "Market value of equities loaded from a provider"
+
+close_prices:
+  type: base
+  description: "Closing prices of equities loaded from a provider"
+
+open_prices:
+  type: base
+  description: "Opening prices of equities loaded from a provider"
+
+book_value:
+  type: base
+  description: "Book value of equities loaded from a provider"
+
+returns:
+  type: base
+  description: "Equity returns loaded from a provider"
+
+# Derived Data Types
+book_to_market:
+  type: derived
+  description: "Ratio of book value to market value"
+  dependencies:
+    - market_value
+    - book_value
+  strategy: classic

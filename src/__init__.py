@@ -9,6 +9,6 @@ This file ensures that when the `src` package is imported, the necessary compone
 """
 
 # Import specific modules or classes from the src package
-from src.timeseries import *
+from src.data import DataManager
 
-__version__ = "0.0.2"
+__version__ = "0.0.21a"
