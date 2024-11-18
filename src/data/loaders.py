@@ -178,6 +178,7 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
             # Reset index to get date as a column
             symbol_data.reset_index(inplace=True)
             
+            
             # Rename columns to lowercase
             symbol_data.columns = [col.lower() for col in symbol_data.columns]
             

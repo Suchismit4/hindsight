@@ -110,7 +110,7 @@ class DataManager:
                     mapping[data_type] = [loader]
         return mapping
     
-    def get_data(self, data_type: str, **kwargs) -> xr.Dataset:
+    def get_data(self, data_type: str, provider: str = None, **kwargs) -> xr.Dataset:
         """
         Retrieve data of the specified type.
         
@@ -140,7 +140,7 @@ class DataManager:
         
         data_info = self.ontology[data_type]
         if data_info['type'] == 'base':
-            return self.get_base_data(data_type, **kwargs)
+            return self.get_base_data(data_type, provider, **kwargs)
         elif data_info['type'] == 'derived':
             raise NotImplementedError(
                 f"Derived data type '{data_type}' is not yet supported."
@@ -148,7 +148,7 @@ class DataManager:
         else:
             raise ValueError(f"Unknown data type '{data_type}'.")
     
-    def get_base_data(self, data_type: str, **kwargs) -> xr.Dataset:
+    def get_base_data(self, data_type: str, provider: str = None, **kwargs) -> xr.Dataset:
         """
         Retrieve base (non-derived) data using the appropriate loader.
         
@@ -170,8 +170,12 @@ class DataManager:
             )
         
         loaders = self.data_type_to_loader[data_type]
-        # For simplicity, we'll use the first available loader
-        loader = loaders[0]
+
+        if provider is None:
+            loader = loaders[0]
+            print("Warning: No provider was explicitly requested. Falling back to first available loaders.")
+        else:
+            loader = provider
         
         try:     
             return loader.load_data(**kwargs)

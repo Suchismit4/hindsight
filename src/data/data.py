@@ -50,22 +50,6 @@ class TimeIndexMetadata:
     frequency: FrequencyType
     shape: Tuple[int, ...]
     
-class TimeSeriesOps:
-    """
-    Core operations for multi-dimensional panel data processing.
-    Handles arrays with Time x Assets x Characteristics structure.
-    """
-    
-    @staticmethod
-    def merge_panel_data(
-        datas: List[Union[xr.DataArray, xr.Dataset]]
-    ) -> xr.DataArray:
-        """
-        Merges two panel data arrays along the asset dimension, aligning assets and time indices.
-        If data arrays have a 'feature' dimension, combines along that dimension.
-        """
-        raise NotImplementedError("Merging is not supported yet.")
-
 
 class TimeSeriesIndex:
     """
@@ -393,30 +377,30 @@ class DateTimeAccessorBase:
             shape=shape
         )
 
-    def align_with(
-        self,
-        other: Union[xr.DataArray, xr.Dataset],
-        method: str = 'outer',
-        freq_method: str = 'ffill'
-    ) -> Union[xr.DataArray, xr.Dataset]:
-        """
-        Aligns two panel datasets across time, assets, and characteristics.
+    # def align_with(
+    #     self,
+    #     other: Union[xr.DataArray, xr.Dataset],
+    #     method: str = 'outer',
+    #     freq_method: str = 'ffill'
+    # ) -> Union[xr.DataArray, xr.Dataset]:
+    #     """
+    #     Aligns two panel datasets across time, assets, and characteristics.
 
-        Parameters:
-            other (Union[xr.DataArray, xr.Dataset]): The dataset to align with.
-            method (str): Join method for alignment ('outer', 'inner', 'left', 'right').
-            freq_method (str): Method for frequency alignment ('ffill', 'bfill', 'mean').
+    #     Parameters:
+    #         other (Union[xr.DataArray, xr.Dataset]): The dataset to align with.
+    #         method (str): Join method for alignment ('outer', 'inner', 'left', 'right').
+    #         freq_method (str): Method for frequency alignment ('ffill', 'bfill', 'mean').
 
-        Returns:
-            Union[xr.DataArray, xr.Dataset]: The aligned dataset.
-        """
-        if not isinstance(other, (xr.DataArray, xr.Dataset)):
-            raise TypeError("Can only align with xarray objects")
+    #     Returns:
+    #         Union[xr.DataArray, xr.Dataset]: The aligned dataset.
+    #     """
+    #     if not isinstance(other, (xr.DataArray, xr.Dataset)):
+    #         raise TypeError("Can only align with xarray objects")
 
-        # Use TimeSeriesOps.merge_panel_data to align the data
-        merged_data = TimeSeriesOps.merge_panel_data(self._obj, other)
+    #     # Use TimeSeriesOps.merge_panel_data to align the data
+    #     merged_data = TimeSeriesOps.merge_panel_data(self._obj, other)
 
-        return merged_data
+    #     return merged_data
 
 # Register accessors for xarray objects
 @xr.register_dataset_accessor('dt')
