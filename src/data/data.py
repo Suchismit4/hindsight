@@ -1,3 +1,6 @@
+# src/data/data.py
+
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -8,6 +11,8 @@ from typing import Union, Dict, List, Optional, Tuple, Any
 from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
+
+from .operations import Rolling
 
 class FrequencyType(Enum):
     """
@@ -401,6 +406,19 @@ class DateTimeAccessorBase:
     #     merged_data = TimeSeriesOps.merge_panel_data(self._obj, other)
 
     #     return merged_data
+    
+    def rolling(self, dim: str, window: int) -> Rolling:
+        """
+        Creates a Rolling object for applying rolling window operations.
+
+        Parameters:
+            dim (str): The dimension over which to apply the rolling window.
+            window (int): The size of the rolling window.
+
+        Returns:
+            Rolling: An instance of the Rolling class.
+        """
+        return Rolling(self._obj, dim, window)
 
 # Register accessors for xarray objects
 @xr.register_dataset_accessor('dt')

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import jax.numpy as jnp
 import equinox as eqx
+from functools import partial
 
 def main():
     data_manager = DataManager()
@@ -40,6 +41,51 @@ def main():
     print(dataset.dt.sel('2022-02-02')) # a wednesday
     
     print(dataset.dt.sel('2022-01-01')) # why null?
+    
+    # Define a function to compute Exponential Moving Average (EMA)
+    # This function will be used with the u_roll method for efficient computation
+    # @partial(jax.jit, static_argnames=['window_size'])
+    # def ema(i: int, carry, block: jnp.ndarray, window_size: int):
+    #     """
+    #     Compute the Exponential Moving Average (EMA) for a given window.
+        
+    #     This function is designed to work with JAX's JIT compilation and
+    #     the u_roll method defined in the Tensor class. It computes the EMA
+    #     efficiently over a rolling window of data.
+        
+    #     Args:
+    #     i (int): Current index in the time series
+    #     state (tuple): Contains current values, carry (previous EMA), and data block
+    #     window_size (int): Size of the moving window
+        
+    #     Returns:
+    #     tuple: Updated state (new EMA value, carry, and data block)
+    #     """
+        
+    #     # Initialize the first value
+    #     if carry is None:
+    #         # Compute the sum of the first window
+    #         current_window_sum = block[:window_size].reshape(-1, 
+    #                                                          block.shape[1], 
+    #                                                          block.shape[2]).sum(axis=0)
+        
+            
+    #         return (current_window_sum * (1/window_size), current_window_sum * (1/window_size))
+        
+    #     # Get the current price
+    #     current_price = block[i]
+        
+    #     # Compute the new EMA
+    #     # EMA = α * current_price + (1 - α) * previous_EMA
+    #     # where α = 1 / (window_size)
+    #     alpha = 1 / window_size
+        
+    #     new_ema = alpha * current_price + (1 - alpha) * carry
+        
+    #     return (new_ema, new_ema)
+    
+    # rolled = dataset.dt.rolling(dim='time', window=10).reduce(func=ema)
+
     
 if __name__ == "__main__":
     main()

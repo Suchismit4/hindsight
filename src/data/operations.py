@@ -1,10 +1,13 @@
+import math
 import numpy as np
 import pandas as pd
 import xarray as xr
 import xarray_jax as xj
 import jax.numpy as jnp
 import equinox as eqx
-from typing import Union, Dict, List, Optional, Tuple, Any
+from typing import Union, Dict, List, Optional, Tuple, Any, Callable
+import functools
+
 
 
 class TimeSeriesOps(eqx.Module):
@@ -24,143 +27,143 @@ class TimeSeriesOps(eqx.Module):
         raise NotImplementedError("Merging is not supported yet.")
 
 
-    # @eqx.filter_jit
-    # def u_roll(
-    #     self: T,
-    #     window_size: int,
-    #     func: Callable[
-    #         [int, Any, jnp.ndarray, int],
-    #         Tuple[jnp.ndarray, Any]
-    #     ],
-    #     overlap_factor: float = None,
-    # ) -> jnp.ndarray:
-    #     """
-    #     Applies a function over rolling windows along the 'time' dimension using block processing for parallelization.
+    @staticmethod
+    @eqx.filter_jit
+    def u_roll(
+        data: jnp.ndarray,
+        window_size: int,
+        func: Callable[
+            [int, Any, jnp.ndarray, int],
+            Tuple[jnp.ndarray, Any]
+        ],
+        overlap_factor: float = None,
+    ) -> jnp.ndarray:
+        """
+        Applies a function over rolling windows along the 'time' dimension using block processing for parallelization.
 
-    #     Args:
-    #         window_size (int): Size of the rolling window.
-    #         func (Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]]):
-    #             Function to apply over the rolling window. Should accept an index, the carry, the block, and window size,
-    #             and return (value, new_carry).
-    #         overlap_factor (float, optional): Factor determining the overlap between blocks.
+        Args:
+            window_size (int): Size of the rolling window.
+            func (Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]]):
+                Function to apply over the rolling window. Should accept an index, the carry, the block, and window size,
+                and return (value, new_carry).
+            overlap_factor (float, optional): Factor determining the overlap between blocks.
 
-    #     Returns:
-    #         jnp.ndarray: Data array computed with the u_roll method.
-    #     """
+        Returns:
+            jnp.ndarray: Data array computed with the u_roll method.
+        """
+        
+        
+        # Set NaN values to zero to avoid issues with NaN in the data
+        data = jnp.nan_to_num(data)
+        
+        # Helper method to prepare blocks of data for u_roll
+        @eqx.filter_jit
+        def _prepare_blocks(
+            window_size: int,
+            overlap_factor: float = None,
+        ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+            """
+            Prepares overlapping blocks of data for efficient parallel processing.
 
-    #     # Set NaN values to zero to avoid issues with NaN in the data
-    #     data = jnp.nan_to_num(self.data)
+            Args:
+                window_size (int): Size of the rolling window.
+                overlap_factor (float, optional): Factor determining the overlap between blocks.
 
-    #     # Prepare blocks of data for processing
-    #     blocks, block_indices = self._prepare_blocks(window_size, overlap_factor)
+            Returns:
+                Tuple[jnp.ndarray, jnp.ndarray]: Padded data and block indices for slicing.
+            """
+            data = jnp.nan_to_num(data)
 
-    #     other_dims = data.shape[1:]
-    #     num_time_steps = data.shape[0]
+            num_time_steps = data.shape[0]
+            other_dims = data.shape[1:]
 
-    #     # Function to apply over each block
-    #     def process_block(
-    #         block: jnp.ndarray,
-    #         func: Callable[
-    #             [int, Any, jnp.ndarray, int],
-    #             Tuple[jnp.ndarray, Any]
-    #         ],
-    #     ) -> jnp.ndarray:
-    #         t, n, j = block.shape
+            max_windows = num_time_steps - window_size + 1
 
-    #         values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float32)
+            # If the overlap_factor (k) is not provided, default it to the ratio of max windows to window size
+            if overlap_factor is None:
+                overlap_factor = max_windows / window_size
 
-    #         # Initialize carry with the func (i == -1 case)
-    #         initial_value, carry = func(-1, None, block, window_size)
+            # Compute the effective block size (kw) based on the overlap factor and window size
+            # This tells us how many time steps each block will span, including overlap
+            block_size = math.ceil(overlap_factor * window_size)
 
-    #         # Set the initial value in the values array
-    #         values = values.at[0].set(initial_value)
+            if block_size > max_windows:
+                raise ValueError("Requested block size is larger than available data.")
 
-    #         # Apply the step function iteratively
-    #         def step_wrapper(i: int, state):
-    #             values, carry = state
-    #             new_value, new_carry = func(i, carry, block, window_size)
-    #             idx = i - window_size + 1
-    #             values = values.at[idx].set(new_value)
-    #             return (values, new_carry)
+            # Calculate the padding required to ensure that the data can be evenly divided into blocks
+            padding_length = (block_size - max_windows % block_size) % block_size
 
-    #         # Apply step_wrapper over the time dimension
-    #         values, carry = jax.lax.fori_loop(
-    #             window_size, t, step_wrapper, (values, carry)
-    #         )
+            # Pad the data along the time dimension
+            padding_shape = (padding_length,) + other_dims
+            data_padded = jnp.concatenate(
+                (data, jnp.zeros(padding_shape, dtype=data.dtype)), axis=0
+            )
 
-    #         return values
+            # Total number of windows in the padded data
+            total_windows = num_time_steps - window_size + 1
 
-    #     # Vectorize over blocks
-    #     blocks_results = jax.vmap(process_block, in_axes=(0, None))(blocks[block_indices], func)
+            # Starting indices for blocks
+            block_starts = jnp.arange(0, total_windows, block_size)
 
-    #     # Reshape the results to match the time dimension
-    #     blocks_results = blocks_results.reshape(-1, *other_dims)
+            # Generate indices to slice the data into blocks
+            block_indices = block_starts[:, None] + jnp.arange(window_size - 1 + block_size)[None, :]
 
-    #     # Concatenate the results along the time dimension
-    #     # Back-pad the results to the original time dimension
-    #     final = jnp.concatenate(
-    #         (
-    #             jnp.repeat(blocks_results[:1], window_size - 1, axis=0),
-    #             blocks_results[: num_time_steps - window_size + 1],
-    #         ),
-    #         axis=0,
-    #     )
+            return data_padded, block_indices
+        
+        # Prepare blocks of data for processing
+        blocks, block_indices = _prepare_blocks(window_size, overlap_factor)
 
-    #     # Return a data array computed with the u_roll method
-    #     return final
+        other_dims = data.shape[1:]
+        num_time_steps = data.shape[0]
 
-    
-    # # Helper method to prepare blocks of data for u_roll
-    # @eqx.filter_jit
-    # def _prepare_blocks(
-    #     self,
-    #     window_size: int,
-    #     overlap_factor: float = None,
-    # ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    #     """
-    #     Prepares overlapping blocks of data for efficient parallel processing.
+        # Function to apply over each block
+        def process_block(
+            block: jnp.ndarray,
+            func: Callable[
+                [int, Any, jnp.ndarray, int],
+                Tuple[jnp.ndarray, Any]
+            ],
+        ) -> jnp.ndarray:
+            t, n, j = block.shape
 
-    #     Args:
-    #         window_size (int): Size of the rolling window.
-    #         overlap_factor (float, optional): Factor determining the overlap between blocks.
+            values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float32)
 
-    #     Returns:
-    #         Tuple[jnp.ndarray, jnp.ndarray]: Padded data and block indices for slicing.
-    #     """
-    #     data = jnp.nan_to_num(self.data)
+            # Initialize carry with the func (i == -1 case)
+            initial_value, carry = func(-1, None, block, window_size)
 
-    #     num_time_steps = data.shape[0]
-    #     other_dims = data.shape[1:]
+            # Set the initial value in the values array
+            values = values.at[0].set(initial_value)
 
-    #     max_windows = num_time_steps - window_size + 1
+            # Apply the step function iteratively
+            def step_wrapper(i: int, state):
+                values, carry = state
+                new_value, new_carry = func(i, carry, block, window_size)
+                idx = i - window_size + 1
+                values = values.at[idx].set(new_value)
+                return (values, new_carry)
 
-    #     # If the overlap_factor (k) is not provided, default it to the ratio of max windows to window size
-    #     if overlap_factor is None:
-    #         overlap_factor = max_windows / window_size
+            # Apply step_wrapper over the time dimension
+            values, carry = jax.lax.fori_loop(
+                window_size, t, step_wrapper, (values, carry)
+            )
 
-    #     # Compute the effective block size (kw) based on the overlap factor and window size
-    #     # This tells us how many time steps each block will span, including overlap
-    #     block_size = math.ceil(overlap_factor * window_size)
+            return values
 
-    #     if block_size > max_windows:
-    #         raise ValueError("Requested block size is larger than available data.")
+        # Vectorize over blocks
+        blocks_results = jax.vmap(process_block, in_axes=(0, None))(blocks[block_indices], func)
 
-    #     # Calculate the padding required to ensure that the data can be evenly divided into blocks
-    #     padding_length = (block_size - max_windows % block_size) % block_size
+        # Reshape the results to match the time dimension
+        blocks_results = blocks_results.reshape(-1, *other_dims)
 
-    #     # Pad the data along the time dimension
-    #     padding_shape = (padding_length,) + other_dims
-    #     data_padded = jnp.concatenate(
-    #         (data, jnp.zeros(padding_shape, dtype=data.dtype)), axis=0
-    #     )
+        # Concatenate the results along the time dimension
+        # Back-pad the results to the original time dimension
+        final = jnp.concatenate(
+            (
+                jnp.repeat(blocks_results[:1], window_size - 1, axis=0),
+                blocks_results[: num_time_steps - window_size + 1],
+            ),
+            axis=0,
+        )
 
-    #     # Total number of windows in the padded data
-    #     total_windows = num_time_steps - window_size + 1
-
-    #     # Starting indices for blocks
-    #     block_starts = jnp.arange(0, total_windows, block_size)
-
-    #     # Generate indices to slice the data into blocks
-    #     block_indices = block_starts[:, None] + jnp.arange(window_size - 1 + block_size)[None, :]
-
-    #     return data_padded, block_indices
+        # Return a data array computed with the u_roll method
+        return final
