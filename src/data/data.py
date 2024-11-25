@@ -12,7 +12,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 
-from .operations import Rolling
+from .computations import Rolling
 
 class FrequencyType(Enum):
     """
@@ -22,7 +22,6 @@ class FrequencyType(Enum):
     DAILY     = 'D'
     WEEKLY    = 'W'
     MONTHLY   = 'M'
-    QUARTERLY = 'Q'
     YEARLY    = 'Y'
 
 @dataclass(frozen=True)
@@ -157,8 +156,8 @@ class DateTimeAccessorBase:
         time_column: str = 'time',
         asset_column: str = 'asset',
         feature_columns: Optional[List[str]] = None,
-        frequency: Optional[str] = 'D'
-    ) -> xr.DataArray:
+        frequency: FrequencyType = FrequencyType.DAILY
+    ) -> xr.Dataset:
         """
         Creates a DataArray from a table (DataFrame), with fixed-size time dimensions.
 
@@ -167,30 +166,46 @@ class DateTimeAccessorBase:
             time_column (str): Name of the time column in the data.
             asset_column (str): Name of the asset column in the data.
             feature_columns (list of str, optional): List of value columns.
+            frequency (FrequencyType): The frequency of the data (ANNUAL, MONTHLY, DAILY).
 
         Returns:
-            xr.DataArray: The resulting DataArray with dimensions:
-                - year: Unique years in data
-                - month: 12 months
-                - day: 31 days
-                - asset: Unique assets
-                - feature: Data features (if multiple value columns)
+            xr.Dataset: The resulting Dataset with dimensions adjusted based on frequency.
         """
         # Make a copy to avoid modifying the original DataFrame
         data = data.copy()
         # Convert the time column to datetime
-        data[time_column] = pd.to_datetime(data[time_column])
+        data[time_column] = pd.to_datetime(data[time_column], errors='coerce')
 
-        # Extract time components
+        # Check for NaT values in the time column
+        if data[time_column].isnull().any():
+            raise ValueError(f"The '{time_column}' column contains invalid datetime values.")
+
+        # Extract time components based on frequency
         dates = data[time_column]
-        data['year'] = dates.dt.year
-        data['month'] = dates.dt.month
-        data['day'] = dates.dt.day
+
+        if frequency == FrequencyType.YEARLY:
+            data['year'] = dates.dt.year
+            data['month'] = 1
+            data['day'] = 1
+            months = np.array([1])
+            days = np.array([1])
+        elif frequency == FrequencyType.MONTHLY:
+            data['year'] = dates.dt.year
+            data['month'] = dates.dt.month
+            data['day'] = 1
+            months = np.arange(1, 13)
+            days = np.array([1])
+        elif frequency == FrequencyType.DAILY:
+            data['year'] = dates.dt.year
+            data['month'] = dates.dt.month
+            data['day'] = dates.dt.day
+            months = np.arange(1, 13)
+            days = np.arange(1, 32)
+        else:
+            raise ValueError(f"Unsupported frequency: {frequency}")
 
         # Prepare the unique ranges for each time component
         years = np.sort(data['year'].unique())
-        months = np.arange(1, 13)  # Fixed-size months (1 to 12)
-        days = np.arange(1, 32)    # Fixed-size days (1 to 31)
 
         # Prepare asset coordinates
         assets = np.sort(data[asset_column].unique())
@@ -200,6 +215,11 @@ class DateTimeAccessorBase:
             time_cols = [time_column, 'year', 'month', 'day', asset_column]
             feature_columns = [col for col in data.columns if col not in time_cols]
 
+        # Check if feature columns are present
+        missing_features = [col for col in feature_columns if col not in data.columns]
+        if missing_features:
+            raise ValueError(f"Feature columns not found in data: {missing_features}")
+
         # Create the MultiIndex for reindexing
         index_components = [years, months, days, assets]
         index_names = ['year', 'month', 'day', asset_column]
@@ -207,6 +227,15 @@ class DateTimeAccessorBase:
 
         # Set DataFrame index and reindex to include all possible combinations
         data.set_index(index_names, inplace=True)
+        
+    
+        print("The multi-index is not unique. Identifying duplicate index entries:")
+        # Find duplicated index entries
+        duplicated_indices = data.index[data.index.duplicated(keep=False)]
+        print(duplicated_indices.unique())
+        print(data[data.index.isin(duplicated_indices)].head(10))
+        quit(0)
+        
         data = data.reindex(full_index)
 
         # Create the time coordinate array
@@ -236,43 +265,30 @@ class DateTimeAccessorBase:
         # Create the TimeSeriesIndex
         ts_index = TimeSeriesIndex(time_coord)
 
-        # Prepare the data values
+        # Initialize an empty dataset with the coordinates
+        ds = xr.Dataset(
+            coords={
+                'year': years,
+                'month': months,
+                'day': days,
+                'asset': assets,
+                'time': (['year', 'month', 'day'], time_data)
+            }
+        )
+
+        # Add each feature as a separate variable in the dataset
         shape_data = (len(years), len(months), len(days), len(assets))
-        if len(feature_columns) == 1:
-            # Single value column
-            var_data = data[feature_columns[0]].values.reshape(shape_data)
-            da = xr.DataArray(
+        for feature in feature_columns:
+            var_data = data[feature].values.reshape(shape_data)
+            ds[feature] = xr.DataArray(
                 data=var_data,
-                coords={
-                    'year': years,
-                    'month': months,
-                    'day': days,
-                    'asset': assets,
-                    'time': (['year', 'month', 'day'], time_data)
-                },
-                dims=['year', 'month', 'day', 'asset'],
-                name=feature_columns[0]
-            )
-        else:
-            # Multiple value columns
-            var_data = data[feature_columns].values.reshape(shape_data + (len(feature_columns),))
-            da = xr.DataArray(
-                data=var_data,
-                coords={
-                    'year': years,
-                    'month': months,
-                    'day': days,
-                    'asset': assets,
-                    'feature': feature_columns,
-                    'time': (['year', 'month', 'day'], time_data)
-                },
-                dims=['year', 'month', 'day', 'asset', 'feature']
+                dims=['year', 'month', 'day', 'asset']
             )
 
         # Attach the TimeSeriesIndex to the time coordinate
-        da.coords['time'].attrs['indexes'] = {'time': ts_index}
+        ds.coords['time'].attrs['indexes'] = {'time': ts_index}
 
-        return da
+        return ds
 
 
     def sel(self, time):
@@ -295,6 +311,7 @@ class DateTimeAccessorBase:
         Returns:
             Union[xr.DataArray, xr.Dataset]: The time-indexed data.
         """
+        data = self._obj
         # Since data is already time-indexed, we might not need to stack.
         # data = self._obj.stack(time=('year', 'quarter', 'month', 'day'))
         time_values = data.coords['time'].values
@@ -381,31 +398,6 @@ class DateTimeAccessorBase:
             frequency=frequency,
             shape=shape
         )
-
-    # def align_with(
-    #     self,
-    #     other: Union[xr.DataArray, xr.Dataset],
-    #     method: str = 'outer',
-    #     freq_method: str = 'ffill'
-    # ) -> Union[xr.DataArray, xr.Dataset]:
-    #     """
-    #     Aligns two panel datasets across time, assets, and characteristics.
-
-    #     Parameters:
-    #         other (Union[xr.DataArray, xr.Dataset]): The dataset to align with.
-    #         method (str): Join method for alignment ('outer', 'inner', 'left', 'right').
-    #         freq_method (str): Method for frequency alignment ('ffill', 'bfill', 'mean').
-
-    #     Returns:
-    #         Union[xr.DataArray, xr.Dataset]: The aligned dataset.
-    #     """
-    #     if not isinstance(other, (xr.DataArray, xr.Dataset)):
-    #         raise TypeError("Can only align with xarray objects")
-
-    #     # Use TimeSeriesOps.merge_panel_data to align the data
-    #     merged_data = TimeSeriesOps.merge_panel_data(self._obj, other)
-
-    #     return merged_data
     
     def rolling(self, dim: str, window: int) -> Rolling:
         """

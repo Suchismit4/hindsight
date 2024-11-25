@@ -5,18 +5,21 @@ import numpy as np
 import xarray as xr
 import yaml
 import os
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
 import hashlib
 import json
+import pyreadstat
 
 import yfinance as yf  
 
+from abc import ABC, abstractmethod
 from .manager import DataLoader
 from .registry import register_data_loader
-from .data import DataArrayDateTimeAccessor
+from .data import DatasetDateTimeAccessor
+from .data import FrequencyType
 
-class BaseDataSource:
+class BaseDataSource(DataLoader):
     """
     Base class for handling data sources configuration and path management.
     
@@ -41,6 +44,40 @@ class BaseDataSource:
         """Load and parse the data sources configuration file."""
         with open(self.config_path, 'r') as f:
             return yaml.safe_load(f)
+    
+    def _apply_filters(self, df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Apply filters to the DataFrame.
+
+        Args:
+            df: The DataFrame to filter.
+            filters: A dictionary where keys are column names and values are filter conditions.
+
+        Returns:
+            pd.DataFrame: The filtered DataFrame.
+        """
+        for column, condition in filters.items():
+            if isinstance(condition, tuple) and len(condition) == 2:
+                # Condition is a tuple like ('>=', '1959-01-01')
+                operator, value = condition
+                if operator == '=' or operator == '==':
+                    df = df[df[column] == value]
+                elif operator == '!=':
+                    df = df[df[column] != value]
+                elif operator == '>':
+                    df = df[df[column] > value]
+                elif operator == '>=':
+                    df = df[df[column] >= value]
+                elif operator == '<':
+                    df = df[df[column] < value]
+                elif operator == '<=':
+                    df = df[df[column] <= value]
+                else:
+                    raise ValueError(f"Unsupported operator '{operator}' in filter for column '{column}'.")
+            else:
+                # Condition is a simple equality
+                df = df[df[column] == condition]
+        return df
     
     def get_cache_path(self, registry_path: str, **params) -> Path:
         """
@@ -69,7 +106,7 @@ class BaseDataSource:
         """Check if valid cache exists for the given path."""
         return cache_path.exists()
     
-    def _convert_to_xarray(self, df: pd.DataFrame, columns) -> xr.Dataset:
+    def _convert_to_xarray(self, df: pd.DataFrame, columns, frequency: FrequencyType = FrequencyType.DAILY) -> xr.Dataset:
         """
         Convert pandas DataFrame to xarray Dataset.
         """
@@ -77,18 +114,22 @@ class BaseDataSource:
         # Ensure 'Date' is datetime
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
-            
-        return DataArrayDateTimeAccessor.from_table(
+                
+        return DatasetDateTimeAccessor.from_table(
             df,
             time_column='date',
             asset_column='identifier',
             feature_columns=columns,
-            frequency='D'
+            frequency=frequency
         )
-        
+            
+    @abstractmethod
+    def load_data(self, **kwargs) -> Union[xr.Dataset, xr.DataTree]:
+        """Abstract method to load data."""
+        pass
 
-@register_data_loader('/market/equities/yahoo', ['close_prices', 'returns', 'high_prices', 'low_prices', 'open_prices', 'volume'])
-class YFinanceDataLoader(DataLoader, BaseDataSource):
+@register_data_loader('/market/equities/yahoo')
+class YFinanceDataLoader(BaseDataSource):
     """
     Data loader for Yahoo Finance data.
     
@@ -97,7 +138,7 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
     avoid unnecessary API calls.
     """
     
-    def load_data(self, symbols: list, start_date: str, end_date: str, frequency: str = '1d', **kwargs) -> xr.Dataset:
+    def load_data(self, **kwargs) -> xr.Dataset:
         """
         Load market data from Yahoo Finance with caching support.
         
@@ -111,6 +152,11 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
         Returns:
             xr.Dataset: Dataset containing prices and returns data.
         """
+        symbols = kwargs.get('symbols', [])
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        frequency = kwargs.get('frequency', '1d')
+        
         # Collect all parameters into a dictionary
         params = {
             'symbols': symbols,
@@ -128,20 +174,20 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
                 return self._load_from_cache(cache_path)
             except Exception as e:
                 print(f"No valid cache found for yFinance: {e}. \nFalling back to Yahoo Finance.")
-        
+            
         # If no cache or cache failed, load from Yahoo Finance
-        loaded_data = self._load_from_yahoo(symbols, start_date, end_date, frequency, cache_path, params, **kwargs)
+        loaded_data = self._load_from_yahoo(symbols, start_date, end_date, frequency, cache_path, params)
         
         return loaded_data
-    
+        
     def _load_from_cache(self, cache_path: Path) -> xr.Dataset:
         """Load data from cache file."""
         # Load the parquet file into a pandas DataFrame
         df = pd.read_parquet(cache_path)
         return self._convert_to_xarray(df, ['close_prices', 'returns', 'high_prices', 'low_prices', 'open_prices', 'volume'])
-    
+        
     def _load_from_yahoo(self, symbols: list, start_date: str, end_date: str, 
-                     frequency: str, cache_path: Path, params: dict, **kwargs) -> xr.Dataset:
+                         frequency: str, cache_path: Path, params: dict) -> xr.Dataset:
         """
         Download data from Yahoo Finance and cache it.
         
@@ -152,7 +198,6 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
             frequency: Data frequency.
             cache_path: Path where to save the cache file.
             params: Dictionary of parameters for caching.
-            **kwargs: Additional arguments passed to yfinance.
         """
         # Download data
         df = yf.download(
@@ -161,7 +206,6 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
             end=end_date,
             interval=frequency,
             group_by='ticker',
-            **kwargs
         )
         
         # Initialize empty list to store individual dataframes
@@ -226,3 +270,123 @@ class YFinanceDataLoader(DataLoader, BaseDataSource):
             json.dump(params, f)
         
         return self._convert_to_xarray(result, ['close_prices', 'returns', 'high_prices', 'low_prices', 'open_prices', 'volume'])
+
+@register_data_loader('/market/equities/wrds/compustat')
+class CompustatDataLoader(BaseDataSource):
+    """
+    Data loader for Compustat data.
+
+    This loader provides access to Compustat data from a local mounted path.
+    Filters work similar to SQL examples at /wrds/crsp/samples/sample_programs/ResearchApps/ff3_crspCIZ.ipynb
+    or the official WRDS API.
+    """
+
+    LOCAL_SRC: str = "/wrds/comp/sasdata/d_na/funda.sas7bdat"
+
+    def load_data(self, **config) -> xr.Dataset:
+        """
+        Load Compustat data with caching support.
+
+        Args:
+            columns_to_read: List of columns to read from the dataset.
+            filters: Optional dictionary of filters to apply to the data.
+            num_processes: Number of processes to use for reading the data.
+            **kwargs: Additional arguments (not used).
+
+        Returns:
+            xr.Dataset: Dataset containing the requested Compustat data.
+        """
+
+        # Extract configurations
+        columns_to_read = config.get('columns_to_read', [])
+        filters = config.get('filters', {})
+        num_processes = config.get('num_processes', 16)
+
+        # Get file stats
+        file_stat = os.stat(self.LOCAL_SRC)
+        file_size = file_stat.st_size
+        file_mod_time = file_stat.st_mtime
+
+        # Collect all parameters into a dictionary
+        params = {
+            'columns_to_read': columns_to_read,
+            'filters': filters,
+            'funda_file_size': file_size,
+            'funda_file_mod_time': file_mod_time,
+        }
+
+        # Generate the cache path based on parameters
+        cache_path = self.get_cache_path('/market/equities/wrds/compustat', **params)
+
+        # Try to load from cache first
+        if self.check_cache(cache_path):
+            try:
+                return self._load_from_cache(cache_path)
+            except Exception as e:
+                print(f"No valid cache found for Compustat: {e}. \nFalling back to loading from source.")
+
+        # If no cache or cache failed, load from source
+        loaded_data = self._load_from_source(columns_to_read, filters, self.LOCAL_SRC, cache_path, num_processes, params)
+
+        return loaded_data
+
+    def _load_from_cache(self, cache_path: Path) -> xr.Dataset:
+        """Load data from cache file."""
+        # Load the parquet file into a pandas DataFrame
+        df = pd.read_parquet(cache_path)
+        return self._convert_to_xarray(df, list(df.columns.drop(['date', 'identifier'])), frequency=FrequencyType.YEARLY)
+
+    def _load_from_source(self, columns_to_read: List[str], filters: Dict[str, Any], funda_path: str, cache_path: Path, num_processes: int, params: dict) -> xr.Dataset:
+        """
+        Load data from Compustat source file and cache it.
+
+        Args:
+            columns_to_read: List of columns to read.
+            filters: Dictionary of filters to apply to the data.
+            funda_path: Path to the Compustat 'funda' data file.
+            cache_path: Path where to save the cache file.
+            num_processes: Number of processes to use in reading the file.
+            params: Dictionary of parameters (used for metadata).
+        """
+
+        # Load the data using pyreadstat
+        df, meta = pyreadstat.read_file_multiprocessing(
+            pyreadstat.read_sas7bdat,
+            funda_path,
+            usecols=columns_to_read,
+            num_processes=num_processes
+        )
+
+        # Convert 'datadate' from SAS date to datetime
+        # SAS epoch is January 1, 1960
+        sas_epoch = pd.to_datetime('1960-01-01')
+        df['datadate'] = sas_epoch + pd.to_timedelta(df['datadate'], unit='D')
+                
+        # Apply filters to the DataFrame
+        df = self._apply_filters(df, filters)
+
+        # Ensure date is datetime and rename 'datadate' to 'date'
+        df.rename(columns={'datadate': 'date'}, inplace=True)
+
+        # Rename 'gvkey' to 'identifier'
+        df.rename(columns={'gvkey': 'identifier'}, inplace=True)
+
+        # Select and order columns
+        required_columns = ['date', 'identifier'] + [col for col in df.columns if col not in ['date', 'identifier']]
+
+        df = df[required_columns]
+
+        # Sort by date and identifier
+        df.sort_values(['date', 'identifier'], inplace=True)
+        df.reset_index(drop=True, inplace=True)
+
+        # Save to cache
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(cache_path)
+
+        # Save metadata
+        metadata_path = cache_path.with_suffix('.json')
+        with open(metadata_path, 'w') as f:
+            json.dump(params, f)
+                  
+        return self._convert_to_xarray(df, list(df.columns.drop(['date', 'identifier'])), frequency=FrequencyType.YEARLY)

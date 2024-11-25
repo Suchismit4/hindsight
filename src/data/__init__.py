@@ -1,19 +1,23 @@
 # src/data/__init__.py
 import os
 from pathlib import Path
+from typing import Optional
 from .registry import data_loader_registry
 from . import loaders
 
-def initialize_cache_directories():
+def get_default_cache_root() -> str:
+    """Returns the default cache root directory."""
+    return os.path.expanduser(os.path.join('~', 'data', 'cache'))
+
+def initialize_cache_directories(cache_root: Optional[str] = None):
     """
     Initialize cache directories for all registered data loaders.
     
-    This function iterates over all registered data loaders, constructs their
-    corresponding cache paths based on their registry paths, and ensures that
-    the necessary directories exist.
+    Args:
+        cache_root: Optional custom cache directory. If None, uses default.
     """
-    # Define the cache root path (consistent with BaseDataSource)
-    cache_root = os.path.expanduser(os.path.join('~', 'data', 'cache'))
+    # Use provided cache_root or default
+    cache_root = cache_root or get_default_cache_root()
 
     for registry_path in data_loader_registry.keys():
         # Build the cache path similar to BaseDataSource.get_cache_path()
@@ -31,3 +35,4 @@ def initialize_cache_directories():
 initialize_cache_directories()
 
 from .manager import DataManager
+

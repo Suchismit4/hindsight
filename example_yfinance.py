@@ -11,36 +11,47 @@ from functools import partial
 
 def main():
     data_manager = DataManager()
+    
+    print(data_manager.list_available_data_paths())
+    
+    # Define data requests with configurations
+    data_requests = [
+        {
+            'data_path': '/market/equities/yahoo',
+            'config': {
+                'symbols': [
+                    'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'FB', 'TSLA', 'BRK.B', 'JPM',
+                    'JNJ', 'V', 'UNH', 'NVDA', 'HD', 'PG', 'MA', 'DIS', 'PYPL',
+                    'VZ', 'ADBE', 'NFLX', 'INTC', 'KO', 'PFE', 'T', 'CMCSA',
+                    'PEP', 'MRK', 'ABT', 'XOM', 'CSCO', 'CVX', 'NKE', 'WMT',
+                    'ORCL', 'TMO', 'ACN', 'ABBV', 'LLY', 'DHR', 'CRM', 'TXN',
+                    'COST', 'AVGO', 'QCOM', 'MDT', 'PM', 'AMGN', 'NEE', 'HON',
+                    'UNP', 'MS', 'BAC', 'BA', 'BMY', 'SBUX', 'C', 'LOW', 'IBM',
+                    'MMM', 'RTX', 'LMT', 'INTU', 'GE', 'BLK', 'AXP', 'SPGI',
+                    'GS', 'CAT', 'PLD', 'MDLZ', 'ISRG', 'CVS', 'NOW', 'MO',
+                    'CHTR', 'BKNG', 'TGT', 'AMAT', 'SYK', 'ZTS', 'DE', 'ADP',
+                    'GM', 'ADI', 'GILD', 'ADSK', 'F', 'MU', 'ATVI', 'APD',
+                    'EL', 'CSX', 'BSX', 'PNC', 'EW', 'CI', 'FDX', 'MMC', 'SHW',
+                    'HUM', 'DUK', 'SO', 'ICE', 'LRCX', 'KLAC', 'TRV', 'SPG',
+                    'COF', 'AIG', 'ECL', 'WM', 'ITW', 'REGN', 'BIIB', 'BK',
+                    'MET', 'MCO', 'NSC', 'AON', 'IDXX', 'SLB', 'PRU', 'APTV',
+                    'D', 'PSA', 'PH', 'DD', 'VLO', 'EXC', 'PEG', 'ROP', 'MAR',
+                    'SBAC', 'OXY', 'VRSK', 'CTAS', 'TDG', 'FTNT', 'ANET', 'FRC',
+                ],
+                'start_date': '2021-01-01',
+                'end_date': '2023-01-31',
+                'frequency': '1d',
+            }
+        }
+    ]
 
     dataset = data_manager.get_data(
-        data_type='close_prices',
-        symbols=[
-            'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'FB', 'TSLA', 'BRK.B', 'JPM',
-            'JNJ', 'V', 'UNH', 'NVDA', 'HD', 'PG', 'MA', 'DIS', 'PYPL',
-            'VZ', 'ADBE', 'NFLX', 'INTC', 'KO', 'PFE', 'T', 'CMCSA',
-            'PEP', 'MRK', 'ABT', 'XOM', 'CSCO', 'CVX', 'NKE', 'WMT',
-            'ORCL', 'TMO', 'ACN', 'ABBV', 'LLY', 'DHR', 'CRM', 'TXN',
-            'COST', 'AVGO', 'QCOM', 'MDT', 'PM', 'AMGN', 'NEE', 'HON',
-            'UNP', 'MS', 'BAC', 'BA', 'BMY', 'SBUX', 'C', 'LOW', 'IBM',
-            'MMM', 'RTX', 'LMT', 'INTU', 'GE', 'BLK', 'AXP', 'SPGI',
-            'GS', 'CAT', 'PLD', 'MDLZ', 'ISRG', 'CVS', 'NOW', 'MO',
-            'CHTR', 'BKNG', 'TGT', 'AMAT', 'SYK', 'ZTS', 'DE', 'ADP',
-            'GM', 'ADI', 'GILD', 'ADSK', 'F', 'MU', 'ATVI', 'APD',
-            'EL', 'CSX', 'BSX', 'PNC', 'EW', 'CI', 'FDX', 'MMC', 'SHW',
-            'HUM', 'DUK', 'SO', 'ICE', 'LRCX', 'KLAC', 'TRV', 'SPG',
-            'COF', 'AIG', 'ECL', 'WM', 'ITW', 'REGN', 'BIIB', 'BK',
-            'MET', 'MCO', 'NSC', 'AON', 'IDXX', 'SLB', 'PRU', 'APTV',
-            'D', 'PSA', 'PH', 'DD', 'VLO', 'EXC', 'PEG', 'ROP', 'MAR',
-            'SBAC', 'OXY', 'VRSK', 'CTAS', 'TDG', 'FTNT', 'ANET', 'FRC',
-        ],
-        start_date='2021-01-01',
-        end_date='2023-01-31',
-        frequency='1d',
+        data_requests=data_requests
     )
+        
+    print(dataset['/market/equities/yahoo'].ds.dt.sel('2022-02-02')) # a wednesday
     
-    print(dataset.dt.sel('2022-02-02')) # a wednesday
-    
-    print(dataset.dt.sel('2022-01-01')) # why null?
+    print(dataset['/market/equities/yahoo'].ds.dt.sel('2022-01-01')) # why null?
     
     # Define a function to compute Exponential Moving Average (EMA)
     # This function will be used with the u_roll method for efficient computation

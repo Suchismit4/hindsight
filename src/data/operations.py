@@ -9,7 +9,6 @@ from typing import Union, Dict, List, Optional, Tuple, Any, Callable
 import functools
 
 
-
 class TimeSeriesOps(eqx.Module):
     """
     Core operations for multi-dimensional panel data processing.
