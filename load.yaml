@@ -1,0 +1,20 @@
+- data_path: 'wrds/equities/compustat'
+  config:
+    columns_to_read: ['gvkey', 'datadate', 'at', 'pstkl', 'txditc', 'pstkrv', 'seq', 'pstk', 'indfmt', 'datafmt', 'popsrc', 'consol']
+    num_processes: 16
+    filters:
+      indfmt: 'INDL'
+      datafmt: 'STD'
+      popsrc: 'D'
+      consol: 'C'
+      datadate: ['>=', '1959-01-01']
+
+- data_path: 'yfinance/equities/market/historical'
+  config:
+    symbols:
+      - 'AAPL'
+      - 'MSFT'
+      - 'AMZN'
+    start_date: '2021-01-01'
+    end_date: '2023-01-31'
+    frequency: '1d'

@@ -12,7 +12,6 @@ import os
 
 from src.data.core.struct import FrequencyType
 
-
 class CompustatDataFetcher(BaseDataSource):
     """
     Data loader for Compustat data.
@@ -57,10 +56,10 @@ class CompustatDataFetcher(BaseDataSource):
         }
 
         # Generate the cache path based on parameters
-        cache_path = self.get_cache_path(**params, frequency=FrequencyType.YEARLY)
+        cache_path = self.get_cache_path(**params)
 
         # Try to load from cache first
-        data = self.load_from_cache(cache_path)
+        data = self.load_from_cache(cache_path, frequency=FrequencyType.YEARLY)
         if data is not None:
             return data
 
@@ -90,7 +89,7 @@ class CompustatDataFetcher(BaseDataSource):
             usecols=columns_to_read,
             num_processes=num_processes
         )
-
+        
         # Convert 'datadate' from SAS date to datetime
         # SAS epoch is January 1, 1960
         sas_epoch = pd.to_datetime('1960-01-01')

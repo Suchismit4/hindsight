@@ -38,7 +38,8 @@ class BaseDataSource(ABC):
             pd.DataFrame: The filtered DataFrame.
         """
         for column, condition in filters.items():
-            if isinstance(condition, tuple) and len(condition) == 2:
+            if isinstance(condition, tuple) or isinstance(condition, list) \
+                    and len(condition) == 2:
                 # Condition is a tuple like ('>=', '1959-01-01')
                 operator, value = condition
                 if operator == '=' or operator == '==':
