@@ -8,7 +8,7 @@ import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any, Callable
 import functools
 
-from .operations import TimeSeriesOps
+from ..core.operations import TimeSeriesOps
 
 class Rolling:
     """

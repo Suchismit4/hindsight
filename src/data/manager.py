@@ -1,38 +1,14 @@
 # src/data/manager.py
 
-from abc import ABC, abstractmethod
 import xarray as xr
+import xarray_jax
 from xarray import DataTree
 from typing import Union, List, Dict, Any
 import os
-from .registry import data_loader_registry
 
-class DataLoader(ABC):
-    """
-    Abstract base class for data loaders in the framework.
+from .provider import provider_registry
 
-    This class defines the interface that all data loaders must implement.
-    Each concrete data loader is responsible for loading specific types of data
-    and converting them into xarray Datasets or DataTrees for standardized downstream processing.
-    """
-
-    @abstractmethod
-    def load_data(self, **kwargs) -> Union[xr.Dataset, xr.DataTree]:
-        """
-        Load data and return it as an xarray Dataset or DataTree.
-
-        This abstract method must be implemented by all concrete data loaders.
-        The implementation should handle the specific logic required to load
-        and process the data from its source format into an xarray Dataset or DataTree.
-
-        Args:
-            **kwargs: Additional arguments specific to the data loader implementation.
-
-        Returns:
-            Union[xr.Dataset, xr.DataTree]: The loaded data in a standardized format.
-        """
-        pass
-
+from src.data.loaders import *
 
 class DataManager:
     """
@@ -46,16 +22,15 @@ class DataManager:
         """
         Initialize the DataManager.
 
-        The manager loads the registry of data loaders upon initialization.
+        The manager collects data loaders from all registered providers upon initialization.
         """
-        self.data_loaders = data_loader_registry
+        self.data_loaders = {}
+        for provider in provider_registry.values():
+            self.data_loaders.update(provider.data_loaders)
 
     def get_data(self, data_requests: List[Dict[str, Any]]) -> xr.DataTree:
         """
         Retrieve data for the specified data paths with their configurations.
-
-        This method accepts a list of data requests, where each request is a
-        dictionary containing the 'data_path' and its specific 'config'.
 
         Args:
             data_requests: A list of dictionaries, each containing:

@@ -1,6 +1,5 @@
 # hindsight/main.py
 
-from src import DataManager
 import xarray as xr
 import xarray_jax as xj
 import numpy as np
@@ -8,6 +7,8 @@ import pandas as pd
 import jax.numpy as jnp
 import equinox as eqx
 from functools import partial
+
+from src import DataManager
 
 def main():
     data_manager = DataManager()
@@ -17,7 +18,7 @@ def main():
     # Define data requests with configurations
     data_requests = [
         {
-            'data_path': '/market/equities/yahoo',
+            'data_path': 'yfinance/equities/market/historical',
             'config': {
                 'symbols': [
                     'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'FB', 'TSLA', 'BRK.B', 'JPM',
@@ -48,10 +49,8 @@ def main():
     dataset = data_manager.get_data(
         data_requests=data_requests
     )
-        
-    print(dataset['/market/equities/yahoo'].ds.dt.sel('2022-02-02')) # a wednesday
-    
-    print(dataset['/market/equities/yahoo'].ds.dt.sel('2022-01-01')) # why null?
+                
+    print(dataset)
     
     # Define a function to compute Exponential Moving Average (EMA)
     # This function will be used with the u_roll method for efficient computation
