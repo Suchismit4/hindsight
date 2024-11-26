@@ -1,4 +1,4 @@
-# data/loaders/compustat/fundv.py
+# data/loaders/wrds/compustat.py
 
 from src.data.abstracts.base import BaseDataSource
 import pandas as pd
