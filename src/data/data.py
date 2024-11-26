@@ -23,6 +23,7 @@ class FrequencyType(Enum):
     WEEKLY    = 'W'
     MONTHLY   = 'M'
     YEARLY    = 'Y'
+    ANNUAL    = 'Y'
 
 @dataclass(frozen=True)
 class DataDimensions:
@@ -156,10 +157,10 @@ class DateTimeAccessorBase:
         time_column: str = 'time',
         asset_column: str = 'asset',
         feature_columns: Optional[List[str]] = None,
-        frequency: FrequencyType = FrequencyType.DAILY
+        frequency: FrequencyType = FrequencyType.DAILY,
     ) -> xr.Dataset:
         """
-        Creates a DataArray from a table (DataFrame), with fixed-size time dimensions.
+        Creates a Dataset from a table (DataFrame), with fixed-size time dimensions.
 
         Parameters:
             data (pd.DataFrame): The input data table.
@@ -234,7 +235,7 @@ class DateTimeAccessorBase:
         duplicated_indices = data.index[data.index.duplicated(keep=False)]
         print(duplicated_indices.unique())
         print(data[data.index.isin(duplicated_indices)].head(10))
-        quit(0)
+        # quit(0)
         
         data = data.reindex(full_index)
 
