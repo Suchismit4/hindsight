@@ -8,7 +8,7 @@ def main():
     print(data_manager.list_available_data_paths())
     
     tree = data_manager.get_data('load.yaml')
-
+    print(tree)
     
 if __name__ == "__main__":
     main()

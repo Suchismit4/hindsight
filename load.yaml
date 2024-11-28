@@ -18,3 +18,10 @@
     start_date: '2021-01-01'
     end_date: '2023-01-31'
     frequency: '1d'
+
+- data_path: 'wrds/equities/crsp'
+  config:
+    columns_to_read: ['DATE', 'PERMNO', 'BIDLO', 'ASKHI', 'PRC', 'RET']
+    num_processes: 16
+    filters:
+      DATE: ['>=', '2024-01-01']

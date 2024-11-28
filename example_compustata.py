@@ -22,7 +22,7 @@ def main():
     # Load the dataset using the DataManager
     dataset = data_manager.get_data([
         {
-            'data_path': '/market/equities/wrds/compustat',
+            'data_path': 'wrds/equities/compustat',
             'config': {
                 'columns_to_read': columns_to_read,
                 'num_processes': 16,
