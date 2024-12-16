@@ -60,6 +60,20 @@ class BaseDataSource(ABC):
                 # Condition is a simple equality
                 df = df[df[column] == condition]
         return df
+    
+    @abstractmethod
+    def _get_cache_params(self, **params) -> Dict[str, Any]:
+        """
+        Abstract method to get parameters used for cache file generation.
+        Must be implemented by subclasses to customize cache key generation.
+
+        Args:
+            **params: Parameters used in the data loading function.
+
+        Returns:
+            Dict[str, Any]: Parameters to use for cache key generation
+        """
+        pass
 
     def get_cache_path(self, **params) -> Path:
         """
@@ -71,8 +85,11 @@ class BaseDataSource(ABC):
         Returns:
             Path: The corresponding cache file path.
         """
+        # Get cache parameters from the abstract method
+        cache_params = self._get_cache_params(**params)
+        
         # Serialize the parameters to a JSON-formatted string
-        params_string = json.dumps(params, sort_keys=True)
+        params_string = json.dumps(cache_params, sort_keys=True)
         # Generate a hash of the parameters string
         params_hash = hashlib.md5(params_string.encode('utf-8')).hexdigest()
         # Create the cache path using the data path and hash
@@ -144,8 +161,34 @@ class BaseDataSource(ABC):
             feature_columns=columns,
             frequency=frequency
         )
+    
+    def load_data(self, **config) -> Union[xr.Dataset, xr.DataTree]:
+        """
+        Load data from the source file and cache it.
+
+        Args:
+            **config: Additional configuration parameters.
+
+        Returns:
+            xr.Dataset or xr.DataTree: The loaded dataset.
+        """
+        # Generate the cache path based on parameters
+        cache_path = self.get_cache_path(**config)
+
+        # Try to load from cache first
+        data = self.load_from_cache(cache_path)
+        if data is not None:
+            return data
+
+        # If no cache or cache failed, load from source
+        loaded_data = self._load_data(**config)
+
+        # Save to cache
+        self.save_to_cache(loaded_data, cache_path, config)
+
+        return loaded_data
 
     @abstractmethod
-    def load_data(self, **kwargs) -> Union[xr.Dataset, xr.DataTree]:
+    def _load_data(self, **config) -> Union[xr.Dataset, xr.DataTree]:
         """Abstract method to load data."""
         pass

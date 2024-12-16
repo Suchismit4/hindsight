@@ -5,6 +5,7 @@ import yfinance as yf
 import pandas as pd
 import xarray as xr
 import xarray_jax
+from typing import Dict, Any
 
 
 class YFinanceCashFlowFetcher(BaseDataSource):
@@ -23,15 +24,9 @@ class YFinanceCashFlowFetcher(BaseDataSource):
             xr.Dataset: Dataset containing cash flow data.
         """
         symbols = kwargs.get('symbols', [])
-        
-        params = {'symbols': symbols}
-        cache_path = self.get_cache_path(**params)
-        data = self.load_from_cache(cache_path)
-        if data is not None:
-            return data
 
         data = self._load_from_yahoo(symbols)
-        self.save_to_cache(data, cache_path, params)
+
         ds_data = self._convert_to_xarray(data)
         return ds_data
 
@@ -54,3 +49,7 @@ class YFinanceCashFlowFetcher(BaseDataSource):
         result.reset_index(drop=True, inplace=True)
         result.set_index(['date', 'identifier'], inplace=True)
         return result
+
+    def _get_cache_params(self, **params) -> Dict[str, Any]:
+        """Get parameters used for cache key generation."""
+        return {'symbols': params.get('symbols', [])}

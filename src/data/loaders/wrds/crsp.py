@@ -18,7 +18,7 @@ class CRSPDataFetcher(BaseDataSource):
 
     LOCAL_SRC: str = "/wrds/crsp/sasdata/a_stock/dsf.sas7bdat"
 
-    def load_data(self, **config) -> xr.Dataset:
+    def _load_data(self, **config) -> xr.Dataset:
         """
         Load CRSP data with caching support.
 
@@ -50,14 +50,6 @@ class CRSPDataFetcher(BaseDataSource):
             'dsf_file_mod_time': file_mod_time,
         }
 
-        # Generate the cache path based on parameters
-        cache_path = self.get_cache_path(**params)
-
-        # Try to load from cache first
-        data = self.load_from_cache(cache_path, frequency=FrequencyType.DAILY)
-        if data is not None:
-            return data
-
         # If no cache or cache failed, load from source
         loaded_data = self._load_local(columns_to_read, filters, num_processes)
 
@@ -68,6 +60,16 @@ class CRSPDataFetcher(BaseDataSource):
         )
 
         return loaded_data
+
+    def _get_cache_params(self, **config) -> Dict[str, Any]:
+        """Get parameters used for cache key generation."""
+        file_stat = os.stat(self.LOCAL_SRC)
+        return {
+            'columns_to_read': config.get('columns_to_read', []),
+            'filters': config.get('filters', {}),
+            'dsf_file_size': file_stat.st_size,
+            'dsf_file_mod_time': file_stat.st_mtime,
+        }
 
     def _load_local(self, columns_to_read: List[str], filters: Dict[str, Any], num_processes: int) -> pd.DataFrame:
         """

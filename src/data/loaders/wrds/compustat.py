@@ -23,7 +23,17 @@ class CompustatDataFetcher(BaseDataSource):
 
     LOCAL_SRC: str = "/wrds/comp/sasdata/d_na/funda.sas7bdat"
 
-    def load_data(self, **config) -> xr.Dataset:
+    def _get_cache_params(self, **config) -> Dict[str, Any]:
+        """Get parameters used for cache key generation."""
+        file_stat = os.stat(self.LOCAL_SRC)
+        return {
+            'columns_to_read': config.get('columns_to_read', []),
+            'filters': config.get('filters', {}),
+            'funda_file_size': file_stat.st_size,
+            'funda_file_mod_time': file_stat.st_mtime,
+        }
+
+    def _load_data(self, **config) -> xr.Dataset:
         """
         Load Compustat data with caching support.
 
@@ -41,27 +51,6 @@ class CompustatDataFetcher(BaseDataSource):
         columns_to_read = config.get('columns_to_read', [])
         filters = config.get('filters', {})
         num_processes = config.get('num_processes', 16)
-
-        # Get file stats
-        file_stat = os.stat(self.LOCAL_SRC)
-        file_size = file_stat.st_size
-        file_mod_time = file_stat.st_mtime
-
-        # Collect all parameters into a dictionary
-        params = {
-            'columns_to_read': columns_to_read,
-            'filters': filters,
-            'funda_file_size': file_size,
-            'funda_file_mod_time': file_mod_time,
-        }
-
-        # Generate the cache path based on parameters
-        cache_path = self.get_cache_path(**params)
-
-        # Try to load from cache first
-        data = self.load_from_cache(cache_path, frequency=FrequencyType.YEARLY)
-        if data is not None:
-            return data
 
         # If no cache or cache failed, load from source
         loaded_data = self._load_local(columns_to_read, filters, num_processes)

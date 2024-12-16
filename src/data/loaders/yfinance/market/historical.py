@@ -6,6 +6,7 @@ import pandas as pd
 import xarray as xr
 from pathlib import Path
 import xarray_jax
+from typing import Dict, Any
 
 class YFinanceEquityHistoricalFetcher(BaseDataSource):
     """
@@ -16,7 +17,7 @@ class YFinanceEquityHistoricalFetcher(BaseDataSource):
     avoid unnecessary API calls.
     """
     
-    def load_data(self, **kwargs) -> xr.Dataset:
+    def load_data(self, **config) -> xr.Dataset:
         """
         Load market data from Yahoo Finance with caching support.
         
@@ -30,32 +31,13 @@ class YFinanceEquityHistoricalFetcher(BaseDataSource):
         Returns:
             xr.Dataset: Dataset containing prices and returns data.
         """
-        symbols = kwargs.get('symbols', [])
-        start_date = kwargs.get('start_date')
-        end_date = kwargs.get('end_date')
-        frequency = kwargs.get('frequency', '1d')
-        
-        # Collect all parameters into a dictionary
-        params = {
-            'symbols': symbols,
-            'start_date': start_date,
-            'end_date': end_date,
-            'frequency': frequency,
-        }
-
-        # Generate the cache path based on parameters
-        cache_path = self.get_cache_path(**params)
-        
-        # Try to load from cache first
-        data = self.load_from_cache(cache_path)
-        if data is not None:
-            return data
+        symbols = config.get('symbols', [])
+        start_date = config.get('start_date')
+        end_date = config.get('end_date')
+        frequency = config.get('frequency', '1d')
             
         # If no cache or cache failed, load from Yahoo Finance
         data = self._load_from_yahoo(symbols, start_date, end_date, frequency)
-        
-        # Save data to cache
-        self.save_to_cache(data, cache_path, params)
         
         # Convert to a time-series indexed dataset
         ts_data = self._convert_to_xarray(data, list(data.columns.drop(['date', 'identifier'])))
@@ -135,3 +117,12 @@ class YFinanceEquityHistoricalFetcher(BaseDataSource):
         result.reset_index(drop=True, inplace=True)
         
         return result
+
+    def _get_cache_params(self, **config) -> Dict[str, Any]:
+        """Get parameters used for cache key generation."""
+        return {
+            'symbols': config.get('symbols', []),
+            'start_date': config.get('start_date'),
+            'end_date': config.get('end_date'),
+            'frequency': config.get('frequency', '1d'),
+        }

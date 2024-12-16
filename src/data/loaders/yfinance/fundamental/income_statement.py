@@ -5,6 +5,7 @@ import yfinance as yf
 import pandas as pd
 import xarray as xr
 import xarray_jax
+from typing import Dict, Any
 
 
 class YFinanceIncomeStatementFetcher(BaseDataSource):
@@ -12,7 +13,7 @@ class YFinanceIncomeStatementFetcher(BaseDataSource):
     Data loader for Yahoo Finance Income Statement data.
     """
 
-    def load_data(self, **kwargs) -> xr.Dataset:
+    def load_data(self, **config) -> xr.Dataset:
         """
         Load income statement data from Yahoo Finance with caching support.
 
@@ -22,16 +23,10 @@ class YFinanceIncomeStatementFetcher(BaseDataSource):
         Returns:
             xr.Dataset: Dataset containing income statement data.
         """
-        symbols = kwargs.get('symbols', [])
-        
-        params = {'symbols': symbols}
-        cache_path = self.get_cache_path(**params)
-        data = self.load_from_cache(cache_path)
-        if data is not None:
-            return data
+        symbols = config.get('symbols', [])
 
         data = self._load_from_yahoo(symbols)
-        self.save_to_cache(data, cache_path, params)
+
         ds_data = self._convert_to_xarray(data)
         return ds_data
 
@@ -54,3 +49,7 @@ class YFinanceIncomeStatementFetcher(BaseDataSource):
         result.reset_index(drop=True, inplace=True)
         result.set_index(['date', 'identifier'], inplace=True)
         return result
+
+    def _get_cache_params(self, **config) -> Dict[str, Any]:
+        """Get parameters used for cache key generation."""
+        return {'symbols': config.get('symbols', [])}
