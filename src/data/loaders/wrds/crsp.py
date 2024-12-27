@@ -69,11 +69,13 @@ class CRSPDataFetcher(BaseDataSource):
             'Y': FrequencyType.YEARLY
         }[config.get("frequency")]
 
-        loaded_data = self._convert_to_xarray(loaded_data, 
-                                              ['issuno', 'hexcd', 'hsiccd',
-       'bidlo', 'askhi', 'prc', 'vol', 'ret', 'bid', 'ask', 'shrout', 'cfacpr',
-       'cfacshr', 'openprc', 'numtrd', 'retx'], 
-                                              frequency=freq)
+        loaded_data = self._convert_to_xarray(
+            loaded_data, [
+                'issuno', 'hexcd', 'hsiccd', 'bidlo', 'askhi', 'prc', 'vol',
+                'ret', 'bid', 'ask', 'shrout', 'cfacpr', 'cfacshr', 'openprc',
+                'numtrd', 'retx'
+            ], frequency=freq
+        )
         
         # TODO: Cache
 
