@@ -53,10 +53,20 @@ class CRSPDataFetcher(BaseDataSource):
         # If no cache or cache failed, load from source
         loaded_data = self._load_local(columns_to_read, filters, num_processes)
 
+        # Set frequency type based on config parameters
+        freq_map = {
+            'D': FrequencyType.DAILY,
+            'W': FrequencyType.WEEKLY,
+            'M': FrequencyType.MONTHLY,
+            'Y': FrequencyType.YEARLY
+        }
+        freq = freq_map.get(config.get('frequency'), None)
+
+        # convert to xarray given params
         loaded_data = self._convert_to_xarray(
             loaded_data,
             list(loaded_data.columns.drop(['date', 'identifier'])),
-            frequency=FrequencyType.DAILY
+            frequency=freq
         )
 
         return loaded_data
