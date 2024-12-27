@@ -61,11 +61,19 @@ class CRSPDataFetcher(BaseDataSource):
         # If no cache or cache failed, load from source
         loaded_data = self._load_local(num_processes)
 
+        # Set frequency type
+        freq = {
+            'D': FrequencyType.DAILY,
+            'W': FrequencyType.WEEKLY,
+            'M': FrequencyType.MONTHLY
+            'Y': FrequencyType.YEARLY
+        }[config.get("frequency")]
+
         loaded_data = self._convert_to_xarray(loaded_data, 
                                               ['issuno', 'hexcd', 'hsiccd',
        'bidlo', 'askhi', 'prc', 'vol', 'ret', 'bid', 'ask', 'shrout', 'cfacpr',
        'cfacshr', 'openprc', 'numtrd', 'retx'], 
-                                              frequency=FrequencyType.DAILY)
+                                              frequency=freq)
         
         # TODO: Cache
 
