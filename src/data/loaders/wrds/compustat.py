@@ -21,7 +21,7 @@ class CompustatDataFetcher(BaseDataSource):
     or the official WRDS API.
     """
 
-    LOCAL_SRC: str = "/wrds/comp/sasdata/d_na/funda.sas7bdat"
+    LOCAL_SRC: str = "/wrds/comp/sasdata/d_na/funda.sas7bdat" # only annual
 
     def load_data(self, **config) -> xr.Dataset:
         """
@@ -58,10 +58,10 @@ class CompustatDataFetcher(BaseDataSource):
         # Generate the cache path based on parameters
         cache_path = self.get_cache_path(**params)
 
-        # Try to load from cache first
-        data = self.load_from_cache(cache_path, frequency=FrequencyType.YEARLY)
-        if data is not None:
-            return data
+        # # Try to load from cache first
+        # data = self.load_from_cache(cache_path, frequency=FrequencyType.YEARLY)
+        # if data is not None:
+        #     return data
 
         # If no cache or cache failed, load from source
         loaded_data = self._load_local(columns_to_read, filters, num_processes)
@@ -69,6 +69,8 @@ class CompustatDataFetcher(BaseDataSource):
         loaded_data = self._convert_to_xarray(loaded_data, 
                                               list(loaded_data.columns.drop(['date', 'identifier'])), 
                                               frequency=FrequencyType.YEARLY)
+        
+        # TODO: Cache
 
         return loaded_data
 

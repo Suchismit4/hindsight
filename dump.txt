@@ -1,0 +1,598 @@
+|- Data path: wrds/equity/compustat
+  |- Provider: wrds
+  |- Sub-providers: [None]
+|- Data path: wrds/equity/crsp
+  |- Provider: wrds
+  |- Sub-providers: [None]
+|- Data path: openbb/fixedincome/rate/estr
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/economy/export_destinations
+  |- Provider: openbb
+  |- Sub-providers: ['econdb']
+|- Data path: openbb/fixedincome/rate/overnight_bank_funding
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'federal_reserve']
+|- Data path: openbb/equity/price/nbbo
+  |- Provider: openbb
+  |- Sub-providers: ['polygon']
+|- Data path: openbb/economy/money_measures
+  |- Provider: openbb
+  |- Sub-providers: ['federal_reserve']
+|- Data path: openbb/economy/balance_of_payments
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'ecb']
+|- Data path: openbb/equity/discovery/top_retail
+  |- Provider: openbb
+  |- Sub-providers: ['nasdaq']
+|- Data path: openbb/etf/equity_exposure
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/profile
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio', 'tmx', 'finviz']
+|- Data path: openbb/commodity/petroleum_status_report
+  |- Provider: openbb
+  |- Sub-providers: ['eia']
+|- Data path: openbb/economy/fred_series
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'intrinio']
+|- Data path: openbb/index/sectors
+  |- Provider: openbb
+  |- Sub-providers: ['tmx']
+|- Data path: openbb/etf/info
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio', 'tmx']
+|- Data path: openbb/economy/available_indicators
+  |- Provider: openbb
+  |- Sub-providers: ['econdb', 'imf']
+|- Data path: openbb/equity/shorts/fails_to_deliver
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/etf/sectors
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'tmx']
+|- Data path: openbb/equity/estimates/forward_pe
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/economy/survey/nonfarm_payrolls
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/etf/discovery/active
+  |- Provider: openbb
+  |- Sub-providers: ['wsj']
+|- Data path: openbb/equity/fundamental/income_growth
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/discovery/undervalued_large_caps
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/equity/price/historical
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'tiingo', 'yfinance', 'intrinio', 'cboe', 'tmx', 'tradier', 'alpha_vantage']
+|- Data path: openbb/equity/fundamental/trailing_dividend_yield
+  |- Provider: openbb
+  |- Sub-providers: ['tiingo']
+|- Data path: openbb/economy/gdp/forecast
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/equity/fundamental/dividends
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio', 'tmx', 'nasdaq']
+|- Data path: openbb/economy/fred_release_table
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/economy/long_term_interest_rate
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/regulators/sec/sic_search
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/fixedincome/government/treasury_auctions
+  |- Provider: openbb
+  |- Sub-providers: ['government_us']
+|- Data path: openbb/fixedincome/corporate/spot_rates
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/economy/survey/manufacturing_outlook_texas
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/currency/search
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'intrinio']
+|- Data path: openbb/derivatives/futures/curve
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance', 'cboe']
+|- Data path: openbb/equity/discovery/undervalued_growth
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/currency/reference_rates
+  |- Provider: openbb
+  |- Sub-providers: ['ecb']
+|- Data path: openbb/equity/fundamental/revenue_per_geography
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/news/company
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'tiingo', 'yfinance', 'intrinio', 'tmx', 'benzinga']
+|- Data path: openbb/equity/compare/company_facts
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/regulators/cftc/cot
+  |- Provider: openbb
+  |- Sub-providers: ['cftc']
+|- Data path: openbb/equity/discovery/filings
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/screener
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'nasdaq', 'finviz']
+|- Data path: openbb/economy/calendar
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'nasdaq', 'tradingeconomics']
+|- Data path: openbb/fixedincome/mortgage_indices
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/fundamental/search_attributes
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/regulators/sec/symbol_map
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/fixedincome/corporate/commercial_paper
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/search
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio', 'cboe', 'tmx', 'tradier', 'nasdaq', 'sec']
+|- Data path: openbb/fixedincome/rate/sonia
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/index/available
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'cboe', 'tmx']
+|- Data path: openbb/news/world
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'tiingo', 'intrinio', 'benzinga', 'biztoc']
+|- Data path: openbb/equity/ownership/insider_trading
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio', 'tmx', 'sec']
+|- Data path: openbb/equity/ownership/major_holders
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/economy/country_profile
+  |- Provider: openbb
+  |- Sub-providers: ['econdb']
+|- Data path: openbb/fixedincome/sofr
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'federal_reserve']
+|- Data path: openbb/equity/discovery/gainers
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance', 'tmx']
+|- Data path: openbb/equity/fundamental/reported_financials
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/equity/ownership/institutional
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/calendar/earnings
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'tmx', 'nasdaq', 'seeking_alpha']
+|- Data path: openbb/economy/pce
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/estimates/consensus
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio', 'tmx']
+|- Data path: openbb/equity/fundamental/filings
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio', 'tmx', 'sec']
+|- Data path: openbb/derivatives/options/unusual
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/index/price/historical
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'yfinance', 'intrinio', 'cboe']
+|- Data path: openbb/economy/short_term_interest_rate
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/fixedincome/rate/sofr
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'federal_reserve']
+|- Data path: openbb/fixedincome/corporate/hqm
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/etf/discovery/gainers
+  |- Provider: openbb
+  |- Sub-providers: ['wsj']
+|- Data path: openbb/index/sp500_multiples
+  |- Provider: openbb
+  |- Sub-providers: ['multpl']
+|- Data path: openbb/economy/composite_leading_indicator
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/economy/interest_rates
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/equity/compare/peers
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/fundamental/balance
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'yfinance', 'intrinio']
+|- Data path: openbb/economy/house_price_index
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/regulators/sec/institutions_search
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/fixedincome/government/treasury_prices
+  |- Provider: openbb
+  |- Sub-providers: ['tmx', 'government_us']
+|- Data path: openbb/equity/discovery/aggressive_small_caps
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/equity/fundamental/metrics
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio', 'finviz']
+|- Data path: openbb/economy/cpi
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'oecd']
+|- Data path: openbb/economy/fred_search
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/fundamental/cash_growth
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/fixedincome/government/treasury_rates
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'federal_reserve']
+|- Data path: openbb/equity/fundamental/management
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance']
+|- Data path: openbb/regulators/sec/cik_map
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/fixedincome/corporate/moody
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/fundamental/historical_splits
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/fundamental/cash
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'yfinance', 'intrinio']
+|- Data path: openbb/fixedincome/spreads/treasury_effr
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/fixedincome/rate/effr_forecast
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/estimates/historical
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/etf/historical
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'tiingo', 'yfinance', 'intrinio', 'cboe', 'tmx', 'tradier', 'alpha_vantage']
+|- Data path: openbb/equity/fundamental/ratios
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio']
+|- Data path: openbb/currency/price/historical
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'tiingo', 'yfinance']
+|- Data path: openbb/derivatives/options/chains
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance', 'intrinio', 'cboe', 'tmx', 'tradier']
+|- Data path: openbb/economy/unemployment
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/economy/central_bank_holdings
+  |- Provider: openbb
+  |- Sub-providers: ['federal_reserve']
+|- Data path: openbb/fixedincome/corporate/bond_prices
+  |- Provider: openbb
+  |- Sub-providers: ['tmx']
+|- Data path: openbb/index/search
+  |- Provider: openbb
+  |- Sub-providers: ['cboe']
+|- Data path: openbb/equity/estimates/analyst_search
+  |- Provider: openbb
+  |- Sub-providers: ['benzinga']
+|- Data path: openbb/derivatives/futures/historical
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/equity/shorts/short_interest
+  |- Provider: openbb
+  |- Sub-providers: ['finra']
+|- Data path: openbb/fixedincome/rate/ecb
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/regulators/sec/schema_files
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/fixedincome/corporate/ice_bofa
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/crypto/search
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/etf/price_performance
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio', 'finviz']
+|- Data path: openbb/fixedincome/government/yield_curve
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'fmp', 'ecb', 'econdb', 'federal_reserve']
+|- Data path: openbb/equity/calendar/dividend
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'nasdaq']
+|- Data path: openbb/equity/compare/groups
+  |- Provider: openbb
+  |- Sub-providers: ['finviz']
+|- Data path: openbb/economy/primary_dealer_fails
+  |- Provider: openbb
+  |- Sub-providers: ['federal_reserve']
+|- Data path: openbb/equity/discovery/losers
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/equity/discovery/latest_financial_reports
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/equity/discovery/active
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/fixedincome/rate/effr
+  |- Provider: openbb
+  |- Sub-providers: ['fred', 'federal_reserve']
+|- Data path: openbb/fixedincome/government/us_yield_curve
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/regulators/cftc/cot_search
+  |- Provider: openbb
+  |- Sub-providers: ['cftc']
+|- Data path: openbb/equity/darkpool/otc
+  |- Provider: openbb
+  |- Sub-providers: ['finra']
+|- Data path: openbb/equity/fundamental/employee_count
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/economy/direction_of_trade
+  |- Provider: openbb
+  |- Sub-providers: ['imf']
+|- Data path: openbb/equity/estimates/forward_ebitda
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio']
+|- Data path: openbb/equity/fundamental/historical_eps
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'alpha_vantage']
+|- Data path: openbb/currency/snapshots
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon']
+|- Data path: openbb/economy/port_volume
+  |- Provider: openbb
+  |- Sub-providers: ['econdb']
+|- Data path: openbb/equity/fundamental/multiples
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/commodity/price/spot
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/estimates/forward_eps
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio', 'seeking_alpha']
+|- Data path: openbb/economy/share_price_index
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/regulators/sec/rss_litigation
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/economy/survey/economic_conditions_chicago
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/etf/discovery/losers
+  |- Provider: openbb
+  |- Sub-providers: ['wsj']
+|- Data path: openbb/commodity/short_term_energy_outlook
+  |- Provider: openbb
+  |- Sub-providers: ['eia']
+|- Data path: openbb/equity/fundamental/balance_growth
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/etf/countries
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'tmx']
+|- Data path: openbb/economy/primary_dealer_positioning
+  |- Provider: openbb
+  |- Sub-providers: ['federal_reserve']
+|- Data path: openbb/fixedincome/bond_indices
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/ownership/share_statistics
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio']
+|- Data path: openbb/etf/search
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio', 'tmx']
+|- Data path: openbb/equity/estimates/price_target
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'finviz', 'benzinga']
+|- Data path: openbb/economy/immediate_interest_rate
+  |- Provider: openbb
+  |- Sub-providers: ['oecd']
+|- Data path: openbb/equity/fundamental/historical_attributes
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/equity/fundamental/latest_attributes
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/economy/survey/bls_series
+  |- Provider: openbb
+  |- Sub-providers: ['bls']
+|- Data path: openbb/equity/historical_market_cap
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio']
+|- Data path: openbb/equity/ownership/form_13f
+  |- Provider: openbb
+  |- Sub-providers: ['sec']
+|- Data path: openbb/economy/indicators
+  |- Provider: openbb
+  |- Sub-providers: ['econdb', 'imf']
+|- Data path: openbb/equity/fundamental/revenue_per_segment
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/price/performance
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'finviz']
+|- Data path: openbb/economy/gdp/nominal
+  |- Provider: openbb
+  |- Sub-providers: ['oecd', 'econdb']
+|- Data path: openbb/equity/shorts/short_volume
+  |- Provider: openbb
+  |- Sub-providers: ['stockgrid']
+|- Data path: openbb/equity/calendar/splits
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/etf/holdings
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'intrinio', 'tmx', 'sec']
+|- Data path: openbb/fixedincome/spreads/tcm
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/fixedincome/spreads/tcm_effr
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/index/snapshots
+  |- Provider: openbb
+  |- Sub-providers: ['cboe', 'tmx']
+|- Data path: openbb/equity/price/quote
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'yfinance', 'intrinio', 'cboe', 'tmx', 'tradier']
+|- Data path: openbb/etf/holdings_date
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/crypto/price/historical
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'tiingo', 'yfinance']
+|- Data path: openbb/equity/discovery/growth_tech
+  |- Provider: openbb
+  |- Sub-providers: ['yfinance']
+|- Data path: openbb/equity/fundamental/management_compensation
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/equity/market_snapshots
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'intrinio']
+|- Data path: openbb/economy/retail_prices
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/fixedincome/rate/dpcredit
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/fundamental/transcript
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/economy/survey/university_of_michigan
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/fixedincome/government/tips_yields
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/economy/fred_regional
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/fixedincome/rate/ameribor
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/fixedincome/government/eu_yield_curve
+  |- Provider: openbb
+  |- Sub-providers: ['ecb']
+|- Data path: openbb/equity/fundamental/income
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'polygon', 'yfinance', 'intrinio']
+|- Data path: openbb/economy/risk_premium
+  |- Provider: openbb
+  |- Sub-providers: ['fmp']
+|- Data path: openbb/derivatives/options/snapshots
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio']
+|- Data path: openbb/fixedincome/rate/iorb
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/equity/calendar/ipo
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio', 'nasdaq']
+|- Data path: openbb/equity/estimates/forward_sales
+  |- Provider: openbb
+  |- Sub-providers: ['intrinio', 'seeking_alpha']
+|- Data path: openbb/economy/gdp/real
+  |- Provider: openbb
+  |- Sub-providers: ['oecd', 'econdb']
+|- Data path: openbb/index/constituents
+  |- Provider: openbb
+  |- Sub-providers: ['fmp', 'cboe', 'tmx']
+|- Data path: openbb/economy/survey/sloos
+  |- Provider: openbb
+  |- Sub-providers: ['fred']
+|- Data path: openbb/economy/survey/bls_search
+  |- Provider: openbb
+  |- Sub-providers: ['bls']
+Duplicate rows (entire rows):
+Empty DataFrame
+Columns: [date, identifier, cusip, permco, issuno, hexcd, hsiccd, bidlo, askhi, prc, vol, ret, bid, ask, shrout, cfacpr, cfacshr, openprc, numtrd, retx]
+Index: []
+
+Duplicate (date, identifier) pairs and their counts:
+Empty DataFrame
+Columns: [date, identifier, count]
+Index: []
+                date  identifier     cusip  ...     openprc     numtrd      retx
+0         1925-12-31       10006  00080010  ...  109.750000        NaN       NaN
+1         1925-12-31       10022  00299090  ...   55.125000        NaN       NaN
+2         1925-12-31       10030  00338690  ...  150.625000        NaN       NaN
+3         1925-12-31       10049  00369890  ...   73.500000        NaN       NaN
+4         1925-12-31       10057  00462610  ...   11.750000        NaN       NaN
+...              ...         ...       ...  ...         ...        ...       ...
+105258375 2023-12-29       93426  92835K10  ...   33.790001        NaN  0.013385
+105258376 2023-12-29       93427  G3323L10  ...  195.179993        NaN -0.033416
+105258377 2023-12-29       93429  12503M10  ...  177.850006        NaN  0.004049
+105258378 2023-12-29       93434  78513510  ...    0.620000      419.0  0.166667
+105258379 2023-12-29       93436  88160R10  ...  255.100006  1062240.0 -0.018564
+
+[105258380 rows x 20 columns]
+The multi-index is not unique. Identifying duplicate index entries:
+MultiIndex([(1926, 1, 1, 10006),
+            (1926, 1, 1, 10022),
+            (1926, 1, 1, 10030),
+            (1926, 1, 1, 10049),
+            (1926, 1, 1, 10057),
+            (1926, 1, 1, 10065),
+            (1926, 1, 1, 10073),
+            (1926, 1, 1, 10081),
+            (1926, 1, 1, 10102),
+            (1926, 1, 1, 10110),
+            ...
+            (2023, 1, 1, 24634),
+            (2023, 1, 1, 24675),
+            (2023, 1, 1, 24607),
+            (2023, 1, 1, 24624),
+            (2023, 1, 1, 24630),
+            (2023, 1, 1, 24662),
+            (2023, 1, 1, 24667),
+            (2023, 1, 1, 24658),
+            (2023, 1, 1, 24660),
+            (2023, 1, 1, 24676)],
+           names=['year', 'month', 'day', 'identifier'], length=448194)
+                                date     cusip  ...     numtrd      retx
+year month day identifier                       ...                     
+1926 1     1   10006      1926-01-02  00080010  ...        NaN  0.001147
+               10022      1926-01-02  00299090  ...        NaN  0.004464
+               10030      1926-01-02  00338690  ...        NaN       NaN
+               10049      1926-01-02  00369890  ...        NaN -0.010135
+               10057      1926-01-02  00462610  ...        NaN  0.010204
+...                              ...       ...  ...        ...       ...
+2023 1     1   93426      2023-12-29  92835K10  ...        NaN  0.013385
+               93427      2023-12-29  G3323L10  ...        NaN -0.033416
+               93429      2023-12-29  12503M10  ...        NaN  0.004049
+               93434      2023-12-29  78513510  ...      419.0  0.166667
+               93436      2023-12-29  88160R10  ...  1062240.0 -0.018564
+
+[105257684 rows x 19 columns]

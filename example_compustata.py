@@ -18,11 +18,11 @@ def main():
         'pstkrv', 'seq', 'pstk', 'indfmt', 'datafmt',
         'popsrc', 'consol'
     ]
-
+    
     # Load the dataset using the DataManager
     dataset = data_manager.get_data([
         {
-            'data_path': '/market/equities/wrds/compustat',
+            'data_path': 'wrds/equity/compustat',
             'config': {
                 'columns_to_read': columns_to_read,
                 'num_processes': 16,
@@ -36,6 +36,7 @@ def main():
             }
         }
     ])
+
 
     # Access the Compustat dataset
     compustat_ds = dataset['/market/equities/wrds/compustat'].ds

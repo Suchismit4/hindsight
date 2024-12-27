@@ -26,8 +26,20 @@ class Provider:
             instance = fetcher_class(data_path)
             self.data_loaders[data_path] = instance
 
-# Global provider registry
-provider_registry = {}
+    def get_fetcher(self, fetcher_key: str):
+        """
+        Return the fetcher callable associated with the given fetcher_key,
+        e.g. 'equity.price.historical' or 'crypto.price.historical'.
+        """
+        return self.fetcher_dict.get(fetcher_key)
+
+    def __repr__(self):
+        return f"<Provider {self.repr_name}>"
+
+_PROVIDER_REGISTRY = {}
 
 def register_provider(provider: Provider):
-    provider_registry[provider.name] = provider
+    _PROVIDER_REGISTRY[provider.name] = provider
+
+def get_provider(name: str) -> Provider:
+    return _PROVIDER_REGISTRY[name]

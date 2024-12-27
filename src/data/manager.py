@@ -8,8 +8,7 @@ from typing import Union, List, Dict, Any
 import os
 import yaml  
 
-
-from .provider import provider_registry
+from .provider import _PROVIDER_REGISTRY
 from src.data.loaders import *
 
 class DataManager:
@@ -27,7 +26,7 @@ class DataManager:
         The manager collects data loaders from all registered providers upon initialization.
         """
         self.data_loaders = {}
-        for provider in provider_registry.values():
+        for provider in _PROVIDER_REGISTRY.values():
             self.data_loaders.update(provider.data_loaders)
 
     def get_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> xr.DataTree:
@@ -51,13 +50,18 @@ class DataManager:
                     raise TypeError("YAML config file must contain a list of data requests.")
 
         data_dict = {}
+        
         for request in data_requests:
+          
             data_path = request.get('data_path')
             config = request.get('config', {})
+            
             if data_path not in self.data_loaders:
                 raise ValueError(f"No DataLoader available for data path '{data_path}'.")
+            
             loader = self.data_loaders[data_path]
             data = loader.load_data(**config)
+    
             if isinstance(data, xr.Dataset):
                 data_dict[data_path] = data
             elif isinstance(data, DataTree):
@@ -94,11 +98,57 @@ class DataManager:
                 data_dict[full_path] = node.ds
         return data_dict
 
-    def list_available_data_paths(self) -> list:
+    def get_available_data_paths(self) -> Dict[str, Dict[str, Any]]:
         """
-        Get a list of all available data paths in the registry.
-
+        Get a dictionary of all available data paths in the registry, along with
+        the top-level provider and any sub-providers (if applicable).
+        
         Returns:
-            list: List of string identifiers for available data paths.
+            Dict[str, Dict[str, Any]]: For each data_path, a dictionary with:
+            {
+                "provider": "openbb" | "wrds" | etc.,
+                "sub_providers": ["yfinance", "fmp", ...] or [None]
+            }
         """
-        return list(self.data_loaders.keys())
+        # Build a mapping from "openbb/equities/price/historical" -> ["yfinance", "fmp", ...]
+        coverage_map = {}
+        
+        if "openbb" in _PROVIDER_REGISTRY: 
+            coverage_dict = obb.coverage.providers
+            
+            for subp, coverage_paths in coverage_dict.items():
+                for dot_path in coverage_paths:
+                    # convert "equities.price.historical" > "equities/price/historical"
+                    slash_path = dot_path.replace(".", "/")
+                    
+                    # Ensure path starts with "openbb/"
+                    full_data_path = (
+                        f"openbb{slash_path}"
+                    )
+                    
+                    # Initialize list if not exists, then append
+                    if full_data_path not in coverage_map:
+                        coverage_map[full_data_path] = []
+                    coverage_map[full_data_path].append(subp)
+
+        # For each registered provider and each data_path it supports, collect info
+        results = {}
+        
+        for provider in _PROVIDER_REGISTRY.values(): 
+            # provider.data_loaders is a dict: { "wrds/equities/compustat": loader, ... }
+            for dp in provider.data_loaders.keys():
+                if provider.name == "openbb":
+                    # Look up sub-providers from coverage_map
+                    # Normalize the data path to ensure consistent lookup
+                    normalized_dp = dp if dp.startswith("openbb/") else f"openbb/{dp}"
+                    sub_providers = coverage_map.get(normalized_dp, [])
+                else:
+                    # For WRDS or others, no concept of sub-providers
+                    sub_providers = [None]
+                    
+                results[dp] = {
+                    "provider": provider.name,
+                    "sub_providers": sub_providers
+                }
+        
+        return results

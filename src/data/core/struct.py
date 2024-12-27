@@ -25,37 +25,6 @@ class FrequencyType(Enum):
     YEARLY    = 'Y'
     ANNUAL    = 'Y'
 
-@dataclass(frozen=True)
-class DataDimensions:
-    """
-    Holds the positions of each dimension in the data array for panel data operations.
-
-    Attributes:
-        time_dim (int): Position of time dimension in array.
-        asset_dim (int): Position of asset dimension in array.
-        char_dim (Optional[int]): Position of characteristics dimension in array, if any.
-    """
-    time_dim: int
-    asset_dim: int
-    char_dim: Optional[int] = None
-
-@dataclass(frozen=True)
-class TimeIndexMetadata:
-    """
-    Stores metadata information about the time index for alignment purposes.
-
-    Attributes:
-        time_coords (np.ndarray): Time axis coordinates for alignment.
-        dims (Dict[str, int]): Mapping of dimension names to their positions.
-        frequency (FrequencyType): Data sampling frequency.
-        shape (Tuple[int, ...]): Shape of the data array.
-    """
-    time_coords: np.ndarray
-    dims: Dict[str, int]
-    frequency: FrequencyType
-    shape: Tuple[int, ...]
-    
-
 class TimeSeriesIndex:
     """
     A class to map timestamps to indices in a multi-dimensional time coordinate.
@@ -133,8 +102,6 @@ class DateTimeAccessorBase:
 
     Attributes:
         _obj (Union[xr.Dataset, xr.DataArray]): The xarray object being accessed.
-        _dims (DataDimensions): Dimensional information of the data array.
-        _metadata (TimeIndexMetadata): Metadata about the time index.
     """
 
     def __init__(self, xarray_obj: Union[xr.Dataset, xr.DataArray]) -> None:
@@ -145,10 +112,7 @@ class DateTimeAccessorBase:
             xarray_obj (Union[xr.Dataset, xr.DataArray]): The xarray object to be accessed.
         """
         self._obj = xarray_obj
-        
-        # TODO: Fix infer_dimensions() to infer the time from the attributes.
-        # self._dims = self._infer_dimensions()
-        # self._metadata = self._create_metadata()
+    
         
     @classmethod
     def from_table(
@@ -220,22 +184,59 @@ class DateTimeAccessorBase:
         missing_features = [col for col in feature_columns if col not in data.columns]
         if missing_features:
             raise ValueError(f"Feature columns not found in data: {missing_features}")
+        
+        data = data[['year', 'month', 'day', time_column, asset_column, *feature_columns]]
 
         # Create the MultiIndex for reindexing
         index_components = [years, months, days, assets]
         index_names = ['year', 'month', 'day', asset_column]
         full_index = pd.MultiIndex.from_product(index_components, names=index_names)
+        
+        dup_subset = ['year','month','day','identifier']
+        pre_dup_mask = data.duplicated(subset=dup_subset, keep=False)
+        pre_dup_data = data[pre_dup_mask].sort_values(dup_subset)
+
+        # print("==== DUPLICATE ROWS BEFORE SETTING INDEX ====") DEBUG
+        # print(pre_dup_data)
+        
+        counts = (
+            data
+            .reset_index(drop=True)    # Make sure we don't have a MultiIndex yet
+            .groupby(['year','month','day','identifier'])  
+            .size()  
+            .sort_values(ascending=False)
+        )
+
+        # # Show only those with duplicates (DEBUG)
+        # counts_dup = counts[counts > 1]
+        # print("==== MULTIINDEX GROUPS THAT APPEAR MORE THAN ONCE ====")
+        # print(counts_dup)
 
         # Set DataFrame index and reindex to include all possible combinations
         data.set_index(index_names, inplace=True)
         
     
-        print("The multi-index is not unique. Identifying duplicate index entries:")
-        # Find duplicated index entries
-        duplicated_indices = data.index[data.index.duplicated(keep=False)]
-        print(duplicated_indices.unique())
-        print(data[data.index.isin(duplicated_indices)].head(10))
+        # ## OVERLOOK (DEBUG)
+        # print("The multi-index is not unique. Identifying duplicate index entries:")
+        # # Find duplicated index entries
+        # # duplicated_indices = data.index[data.index.duplicated(keep=False)]
+        # # print(duplicated_indices.unique())
+        # # print(data[data.index.isin(duplicated_indices)])
+        # duplicated_mask = data.index.duplicated(keep=False)
+        # duplicated_data = data[duplicated_mask]
+        # print("==== DUPLICATE ROWS ====")
+        # print(duplicated_data)
+        # i = 0
+        # for idx, group in duplicated_data.groupby(level=[0, 1, 2, 3]): 
+        #     print("MultiIndex:", idx)
+        #     print(group)
+        #     print("-----")
+        #     i += 1
+        #     if (i > 3):
+        #         break
+
         # quit(0)
+        # # OVERLOOK STOP
         
         data = data.reindex(full_index)
 
@@ -291,7 +292,6 @@ class DateTimeAccessorBase:
 
         return ds
 
-
     def sel(self, time):
         """
         Selects data corresponding to the given time(s) using TimeSeriesIndex.
@@ -320,85 +320,6 @@ class DateTimeAccessorBase:
         if isinstance(self._obj, xr.Dataset):
             return xr.Dataset({var: ('time', data[var].values) for var in self._obj.data_vars}, coords={'time': time_values})
         return xr.DataArray(data.values, coords={'time': time_values}, dims=['time'], name=data.name)
-    
-    def _infer_dimensions(self) -> DataDimensions:
-        """
-        Determines the positions of time, asset, and characteristic dimensions in the data array.
-
-        Returns:
-            DataDimensions: An object containing the positions of each dimension.
-        """
-        dims = list(self._obj.dims)  # List of dimension names
-        # Find time dimension
-        time_dim = None
-
-        for i, dim in enumerate(dims):
-            # Check if the coordinate values are datetime-like
-            coord_values = self._obj.coords.get(dim, None)
-            if coord_values is not None and np.issubdtype(coord_values.dtype, np.datetime64):
-                time_dim = i
-                break
-        if time_dim is None:
-            raise ValueError("No time dimension found in data")
-
-        # Find asset dimension
-        asset_dim = None
-        for i, dim in enumerate(dims):
-            if dim.lower() in ['asset', 'assets']:
-                asset_dim = i
-                break
-        if asset_dim is None:
-            # Assume the largest non-time dimension is the asset dimension
-            sizes = [(idx, size) for idx, size in enumerate(self._obj.sizes.values()) if idx != time_dim]
-            if not sizes:
-                raise ValueError("No asset dimension found in data")
-            asset_dim = max(sizes, key=lambda x: x[1])[0]
-
-        # Identify characteristics dimension if present
-        remaining_dims = set(range(len(dims))) - {time_dim, asset_dim}
-        char_dim = remaining_dims.pop() if remaining_dims else None
-
-        return DataDimensions(time_dim, asset_dim, char_dim)
-
-    def _create_metadata(self) -> TimeIndexMetadata:
-        """
-        Creates metadata information for the time index.
-
-        Returns:
-            TimeIndexMetadata: An instance containing metadata about the time index.
-        """
-        # Extract time coordinates
-        time_dim_name = self._obj.dims[self._dims.time_dim]
-        time_coords = self._obj.coords[time_dim_name].values
-
-        # Create dimension mapping
-        dims = {dim_name: idx for idx, dim_name in enumerate(self._obj.dims)}
-
-        # Determine data frequency
-        inferred_freq = pd.infer_freq(pd.DatetimeIndex(time_coords))
-        if inferred_freq is not None:
-            # Map inferred frequency to FrequencyType
-            freq_map = {
-                'D': FrequencyType.DAILY,
-                'W': FrequencyType.WEEKLY,
-                'M': FrequencyType.MONTHLY,
-                'Q': FrequencyType.QUARTERLY,
-                'A': FrequencyType.ANNUAL,
-                'Y': FrequencyType.ANNUAL
-            }
-            frequency = freq_map.get(inferred_freq[0], FrequencyType.DAILY)
-        else:
-            frequency = FrequencyType.DAILY  # Default frequency
-
-        # Get shape of the data array
-        shape = self._obj.shape
-
-        return TimeIndexMetadata(
-            time_coords=time_coords,
-            dims=dims,
-            frequency=frequency,
-            shape=shape
-        )
     
     def rolling(self, dim: str, window: int) -> Rolling:
         """

@@ -4,6 +4,7 @@ from ...provider import Provider, register_provider
 
 # Fetchers
 from .compustat import CompustatDataFetcher
+from .crsp import CRSPDataFetcher
 
 # Define the provider
 compustat_provider = Provider(
@@ -13,7 +14,8 @@ compustat_provider = Provider(
     It serves as a comprehensive resource for researchers, analysts, and academics, offering datasets from various sources, including Compustat, CRSP, and others. 
     This data loader facilitates the retrieval of data from WRDS, enabling users to efficiently access and analyze financial information on both active and inactive global companies.""",
     fetcher_dict={
-        "equities/compustat": CompustatDataFetcher,
+        "equity/compustat": CompustatDataFetcher,
+        "equity/crsp": CRSPDataFetcher
     },
     repr_name="wrds",
 )

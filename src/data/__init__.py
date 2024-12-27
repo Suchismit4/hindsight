@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from .provider import provider_registry
+from .provider import _PROVIDER_REGISTRY
 
 def get_default_cache_root() -> str:
     """Returns the default cache root directory."""
@@ -20,7 +20,7 @@ def initialize_cache_directories(cache_root: Optional[str] = None):
     # Use provided cache_root or default
     cache_root = cache_root or get_default_cache_root()
 
-    for provider in provider_registry.values():
+    for provider in _PROVIDER_REGISTRY.values():
         for data_loader in provider.data_loaders.values():
             # Each data_loader is an instance of BaseDataSource
             # Build the cache directory path similar to BaseDataSource
