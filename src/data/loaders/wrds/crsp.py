@@ -41,7 +41,7 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
         if 'permno' in df.columns:
             df.rename(columns={'permno': 'identifier'}, inplace=True)
 
-        # Order columns so 'date' and 'identifier' come first
+        # Order columns so 'Sindate' and 'identifier' come first
         required_cols = ['date', 'identifier']
         other_cols = [c for c in df.columns if c not in required_cols]
         df = df[required_cols + other_cols]
