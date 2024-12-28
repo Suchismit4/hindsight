@@ -235,7 +235,7 @@ class DateTimeAccessorBase:
             if (i > 3):
                 break
 
-        quit(0)
+        # quit(0)
         # OVERLOOK STOP
         
         data = data.reindex(full_index)

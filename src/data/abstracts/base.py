@@ -182,7 +182,7 @@ class BaseDataSource(ABC):
         netcdf_path = base_path.with_suffix('.nc')
         metadata_path = base_path.with_suffix('.json')
         netcdf_path.parent.mkdir(parents=True, exist_ok=True)
-
+        print('saving...')
         try:
             # Add params to ds.attrs
             ds.attrs.update(params)
