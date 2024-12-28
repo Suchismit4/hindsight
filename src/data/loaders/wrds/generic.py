@@ -63,7 +63,7 @@ class GenericWRDSDataLoader(BaseDataSource):
         # Construct a cache path (not fully implemented)
         cache_path = self.get_cache_path(**params)
 
-        # Attempt cache load (if implemented)
+        # Attempt cache load
         cached_ds = self.load_from_cache(cache_path, request_params=params)
         if cached_ds is not None:
             print("Loaded from NetCDF cache")

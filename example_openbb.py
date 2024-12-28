@@ -26,7 +26,7 @@ def main():
         "config": {
             "provider": "yfinance",      
             "symbols": ["AAPL", "TSLA"],
-            "start_date": "2020-01-01",
+            "start_date": "2015-01-01",
             "end_date": "2021-01-01"
         }
     }

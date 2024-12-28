@@ -122,6 +122,12 @@ class BaseDataSource(ABC):
             with open(metadata_path, 'r') as f:
                 cached_params = json.load(f)
             # Direct comparison
+            # Convert any sequences to sorted lists before comparison
+            for params in (cached_params, request_params):
+                for key in params:
+                    if isinstance(params[key], (list, tuple)):
+                        params[key] = sorted(list(params[key]))
+
             return cached_params == request_params
         except Exception as e:
             print(f"Error reading metadata file {metadata_path}: {e}")
@@ -147,22 +153,29 @@ class BaseDataSource(ABC):
         Returns:
             xr.Dataset or None: The loaded Dataset if everything matches; None otherwise.
         """
+        print(f"{self.data_path} : Attempting to load from cache")
         netcdf_path = base_path.with_suffix('.nc')
         metadata_path = base_path.with_suffix('.json')
 
-        if not netcdf_path.exists():
+        if not netcdf_path.exists() or not self._metadata_matches(metadata_path, request_params):
+            print(f"{self.data_path} : No cache found. Falling back to fetching data...")
             return None
-
-        # Check if metadata matches
-        if not self._metadata_matches(metadata_path, request_params):
-            return None
-
+        
         try:
-            ds = xr.load_dataset(netcdf_path)  # or xr.open_dataset, either is fine
-            # Optionally you can confirm ds.attrs or other checks, but we'll skip that here.
+            ds = xr.load_dataset(netcdf_path)  # or xr.open_dataset, either is OK
+
+            from ..core.struct import TimeSeriesIndex
+            
+            time_coord = ds.coords['time']
+            ts_index = TimeSeriesIndex(time_coord)
+            ds.coords['time'].attrs['indexes'] = {'time': ts_index}
+            
+            # TODO: Enable force loads...
+            print(f"{self.data_path} : Loaded data from cache. Use force_load=True in config to not use cache.")
+            
             return ds
         except Exception as e:
-            print(f"Failed to load from NetCDF: {e}")
+            print(f"{self.data_path} : Failed to load from NetCDF: {e}")
             return None
 
     def save_to_cache(
@@ -182,23 +195,32 @@ class BaseDataSource(ABC):
         netcdf_path = base_path.with_suffix('.nc')
         metadata_path = base_path.with_suffix('.json')
         netcdf_path.parent.mkdir(parents=True, exist_ok=True)
-        print('saving...')
+
+        # Pop the 'indexes' attribute if it exists. We'll restore it after saving.
+        time_indexes = ds.coords['time'].attrs.pop('indexes', None)
+        
         try:
             # Add params to ds.attrs
             ds.attrs.update(params)
 
             ds.to_netcdf(
                 path=netcdf_path,
-                mode='w',
-                format='NETCDF4',  
-                engine='netcdf4'   
+                mode='w',  
+                format="NETCDF4",
+                engine="netcdf4"
             )
-            
+        
             # Save the same params into a JSON sidecar
             with open(metadata_path, 'w') as f:
                 json.dump(params, f, indent=2)
+            
         except Exception as e:
-            print(f"Failed to save Dataset to NetCDF cache: {e}")
+            raise Exception(f"Failed to save Dataset to NetCDF cache: {e}")
+        finally:
+            # restore the attribute in memory
+            # so that selection methods continue to work.
+            if time_indexes is not None:
+                ds.coords['time'].attrs['indexes'] = time_indexes
             
     def _convert_to_xarray(self, df: pd.DataFrame, columns, frequency: FrequencyType = FrequencyType.DAILY) -> xr.Dataset:
         """
