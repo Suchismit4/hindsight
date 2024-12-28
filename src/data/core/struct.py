@@ -313,8 +313,7 @@ class DateTimeAccessorBase:
             Union[xr.DataArray, xr.Dataset]: The time-indexed data.
         """
         data = self._obj
-        # Since data is already time-indexed, we might not need to stack.
-        # data = self._obj.stack(time=('year', 'quarter', 'month', 'day'))
+
         time_values = data.coords['time'].values
         
         if isinstance(self._obj, xr.Dataset):
