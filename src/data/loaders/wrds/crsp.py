@@ -1,49 +1,61 @@
 # data/loaders/wrds/crsp.py
 
 import pandas as pd
+import xarray as xr
 from src.data.core.struct import FrequencyType
 from .generic import GenericWRDSDataLoader
 
 class CRSPDataFetcher(GenericWRDSDataLoader):
     """
-    Data loader for CRSP data.
-
-    Inherits the generic logic from GenericWRDSDataLoader, 
-    while overriding the path, frequency, and any CRSP-specific transformations.
+    Data loader for CRSP stock data.
+    
+    - Dynamically sets the LOCAL_SRC path based on the frequency string:
+        * "D" -> dsf.sas7bdat (daily)
+        * "M" -> msf.sas7bdat (monthly)
+      If an unrecognized frequency is provided, defaults to daily.
+    - Then calls the generic loader.
     """
 
-    LOCAL_SRC: str = "/wrds/crsp/sasdata/a_stock/dsf.sas7bdat"
-    FREQUENCY: FrequencyType = FrequencyType.DAILY
+    # Map user frequency strings to (filename, FrequencyType)
+    CRSP_FREQUENCY_MAP = {
+        'D': ('dsf.sas7bdat', FrequencyType.DAILY),
+        'M': ('msf.sas7bdat', FrequencyType.MONTHLY),
+    }
+
+    def load_data(self, **config) -> xr.Dataset:
+        """
+        Adjust LOCAL_SRC depending on the requested frequency, then call the generic loader.
+        """
+        user_freq_str = str(config.get('frequency', 'D')).upper()
+        
+        # Find the correct path + enum from the map; default to daily if not found
+        filename, freq_enum = self.CRSP_FREQUENCY_MAP.get(
+            user_freq_str, 
+            ('dsf.sas7bdat', FrequencyType.DAILY)
+        )
+        
+        # Construct the path for CRSP a_stock
+        self.LOCAL_SRC = f"/wrds/crsp/sasdata/a_stock/{filename}"
+        self.FREQUENCY = freq_enum
+
+        return super().load_data(**config)
 
     def _preprocess_df(self, df: pd.DataFrame, **config) -> pd.DataFrame:
         """
         CRSP-specific preprocessing:
-          - SAS date conversion for 'date'
-          - Convert 'permco'/'permno' -> integer
-          - Rename 'permno' -> 'identifier'
-          - Reorder columns, etc.
+         - Calls the generic _preprocess_df with date_col='date', identifier_col='permno'.
+         - Converts 'permco' to int if present.
         """
-        df.columns = df.columns.str.lower()
-        df.reset_index(inplace=True, drop=True)
+        
+        df = super()._preprocess_df(
+            df,
+            date_col='date',
+            identifier_col='permno',
+            **config
+        )
 
-        # Convert SAS date integer to real datetime
-        sas_epoch = pd.to_datetime('1960-01-01')
-        if 'date' in df.columns:
-            df['date'] = df['date'].astype(int)
-            df['date'] = sas_epoch + pd.to_timedelta(df['date'], unit='D')
-
-        # Convert permco/permno to int
-        for col in ['permco', 'permno']:
-            if col in df.columns:
-                df[col] = df[col].astype(int)
-
-        # Rename 'permno' -> 'identifier'
-        if 'permno' in df.columns:
-            df.rename(columns={'permno': 'identifier'}, inplace=True)
-
-        # Order columns so 'Sindate' and 'identifier' come first
-        required_cols = ['date', 'identifier']
-        other_cols = [c for c in df.columns if c not in required_cols]
-        df = df[required_cols + other_cols]
+        # convert 'permco' to int if present
+        if 'permco' in df.columns:
+            df['permco'] = df['permco'].astype(int)
 
         return df

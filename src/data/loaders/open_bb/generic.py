@@ -40,8 +40,9 @@ class GenericOpenBBDataFetcher(BaseDataSource):
         cache_path = self.get_cache_path(**cache_params)
 
         # Try loading from cache
-        cached_ds = self.load_from_cache(cache_path, frequency=FrequencyType.DAILY)
+        cached_ds = self.load_from_cache(cache_path, request_params=cache_params)
         if cached_ds is not None:
+            print("Loaded from NetCDF cache")
             return cached_ds
 
         # Resolve the function in OpenBB
@@ -81,6 +82,6 @@ class GenericOpenBBDataFetcher(BaseDataSource):
             frequency=FrequencyType.DAILY,
         )
 
-        # self.save_to_cache(ds, cache_path, frequency=FrequencyType.DAILY)
+        self.save_to_cache(ds, cache_path, cache_params)
 
         return ds

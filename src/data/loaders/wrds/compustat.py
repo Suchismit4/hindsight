@@ -1,6 +1,7 @@
 # data/loaders/wrds/compustat.py
 
 import pandas as pd
+import xarray as xr
 from src.data.core.struct import FrequencyType
 from typing import Dict, Any, List
 from .generic import GenericWRDSDataLoader
@@ -9,44 +10,49 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
     """
     Data loader for Compustat data.
 
-    Inherits from GenericWRDSDataLoader and implements 
-    any dataset-specific transformations or filtering logic.
+    - Dynamically sets LOCAL_SRC based on frequency:
+        * "Y" -> funda.sas7bdat (annual)
+        * "Q" -> fundq.sas7bdat (quarterly)
+      Defaults to annual if not recognized.
     """
 
-    LOCAL_SRC: str = "/wrds/comp/sasdata/d_na/funda.sas7bdat"  # annual data
-    FREQUENCY: FrequencyType = FrequencyType.YEARLY
+    COMP_FREQUENCY_MAP = {
+        'Y': ('funda.sas7bdat', FrequencyType.YEARLY),
+    }
+
+    def load_data(self, **config) -> xr.Dataset:
+        """
+        Determine which Compustat file to load (annual vs. quarterly) 
+        based on user-supplied frequency, then call the generic loader.
+        """
+        user_freq_str = str(config.get('frequency', 'Y')).upper()
+        
+        # Pick from the map or default to annual
+        filename, freq_enum = self.COMP_FREQUENCY_MAP.get(
+            user_freq_str,
+            ('funda.sas7bdat', FrequencyType.YEARLY)
+        )
+
+        # Construct the path
+        self.LOCAL_SRC = f"/wrds/comp/sasdata/d_na/{filename}"
+        self.FREQUENCY = freq_enum
+
+        return super().load_data(**config)
 
     def _preprocess_df(self, df: pd.DataFrame, **config) -> pd.DataFrame:
         """
         Compustat-specific preprocessing:
-          - SAS date conversion for 'datadate'
-          - Rename 'datadate' -> 'date'
-          - Rename 'gvkey' -> 'identifier'
-          - Apply filters if provided
+         - date_col='datadate' -> 'date'
+         - identifier_col='gvkey' -> 'identifier'
         """
-        # Convert 'datadate' to datetime from SAS integer
-        sas_epoch = pd.to_datetime('1960-01-01')
-        if 'datadate' in df.columns:
-            df['datadate'] = sas_epoch + pd.to_timedelta(df['datadate'], unit='D')
-            df.rename(columns={'datadate': 'date'}, inplace=True)
+        df = super()._preprocess_df(
+            df,
+            date_col='datadate',
+            identifier_col='gvkey',
+            **config
+        )
 
-        # Rename 'gvkey' -> 'identifier'
-        if 'gvkey' in df.columns:
-            df.rename(columns={'gvkey': 'identifier'}, inplace=True)
-
-        # Apply filters if provided
-        filters: Dict[str, Any] = config.get('filters', {})
-        for col, val in filters.items():
-            # Simple equality filters (extend as needed)
-            df = df[df[col] == val]
-
-        # Reorder columns
-        required_cols = ['date', 'identifier']
-        other_cols = [c for c in df.columns if c not in required_cols]
-        df = df[required_cols + other_cols]
-
-        # Sort for consistency
-        df.sort_values(['date', 'identifier'], inplace=True)
-        df.reset_index(drop=True, inplace=True)
+        # Post processing to clean data
+        
 
         return df

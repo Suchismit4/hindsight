@@ -25,13 +25,14 @@ def main():
             'data_path': 'wrds/equity/compustat',
             'config': {
                 'columns_to_read': columns_to_read,
+                'freq': 'A',
                 'num_processes': 16,
                 'filters': {
                     'indfmt': 'INDL',
                     'datafmt': 'STD',
                     'popsrc': 'D',
                     'consol': 'C',
-                    'datadate': ('>=', '1959-01-01')
+                    'date': ('>=', '1959-01-01')
                 },
             }
         }

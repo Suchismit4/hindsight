@@ -1,4 +1,4 @@
-# src/data/data.py
+# src/data/core/struct.py
 
 
 import numpy as np
@@ -196,8 +196,8 @@ class DateTimeAccessorBase:
         pre_dup_mask = data.duplicated(subset=dup_subset, keep=False)
         pre_dup_data = data[pre_dup_mask].sort_values(dup_subset)
 
-        # print("==== DUPLICATE ROWS BEFORE SETTING INDEX ====") DEBUG
-        # print(pre_dup_data)
+        print("==== DUPLICATE ROWS BEFORE SETTING INDEX ====") #DEBUG
+        print(pre_dup_data)
         
         counts = (
             data
@@ -207,36 +207,36 @@ class DateTimeAccessorBase:
             .sort_values(ascending=False)
         )
 
-        # # Show only those with duplicates (DEBUG)
-        # counts_dup = counts[counts > 1]
-        # print("==== MULTIINDEX GROUPS THAT APPEAR MORE THAN ONCE ====")
-        # print(counts_dup)
+        # Show only those with duplicates (DEBUG)
+        counts_dup = counts[counts > 1]
+        print("==== MULTIINDEX GROUPS THAT APPEAR MORE THAN ONCE ====")
+        print(counts_dup)
 
         # Set DataFrame index and reindex to include all possible combinations
         data.set_index(index_names, inplace=True)
         
     
-        # ## OVERLOOK (DEBUG)
-        # print("The multi-index is not unique. Identifying duplicate index entries:")
-        # # Find duplicated index entries
-        # # duplicated_indices = data.index[data.index.duplicated(keep=False)]
-        # # print(duplicated_indices.unique())
-        # # print(data[data.index.isin(duplicated_indices)])
-        # duplicated_mask = data.index.duplicated(keep=False)
-        # duplicated_data = data[duplicated_mask]
-        # print("==== DUPLICATE ROWS ====")
-        # print(duplicated_data)
-        # i = 0
-        # for idx, group in duplicated_data.groupby(level=[0, 1, 2, 3]): 
-        #     print("MultiIndex:", idx)
-        #     print(group)
-        #     print("-----")
-        #     i += 1
-        #     if (i > 3):
-        #         break
+        # OVERLOOK (DEBUG)
+        print("The multi-index is not unique. Identifying duplicate index entries:")
+        # Find duplicated index entries
+        duplicated_indices = data.index[data.index.duplicated(keep=False)]
+        print(duplicated_indices.unique())
+        print(data[data.index.isin(duplicated_indices)])
+        duplicated_mask = data.index.duplicated(keep=False)
+        duplicated_data = data[duplicated_mask]
+        print("==== DUPLICATE ROWS ====")
+        print(duplicated_data)
+        i = 0
+        for idx, group in duplicated_data.groupby(level=[0, 1, 2, 3]): 
+            print("MultiIndex:", idx)
+            print(group)
+            print("-----")
+            i += 1
+            if (i > 3):
+                break
 
-        # quit(0)
-        # # OVERLOOK STOP
+        quit(0)
+        # OVERLOOK STOP
         
         data = data.reindex(full_index)
 

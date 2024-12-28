@@ -29,16 +29,17 @@ def main():
             "start_date": "2020-01-01",
             "end_date": "2021-01-01"
         }
-    },
-    {
-        'data_path': 'wrds/equity/crsp',
-        'config': {
-            'num_processes': 16,
-        }
-    }])
+    }
+    # {
+    #     'data_path': 'wrds/equity/crsp',
+    #     'config': {
+    #         'num_processes': 16,
+    #         'freq': 'D'
+    #     }
+    # }
+    ])
 
     print(dataset)
-
 
 if __name__ == "__main__":
     main()
