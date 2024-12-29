@@ -42,24 +42,7 @@ def main():
     # Access the Compustat dataset
     print("Converting to ds")
     compustat_ds = dataset['/market/equities/wrds/compustat'].ds
-
-    # Remove duplicate entries for annual data
-    df = compustat_ds.to_dataset().to_dataframe()
-    print(f"df type: {type(df)}")
-    df['date'] = pd.to_datetime(df['date'])
-    df.sort_values('date', ascending=False, inplace=True)
-
-    # drop based on other row values, create a function
-    # df_cleaned = df.drop_duplicates(subset='identifier', keep='last')
-
-    # Add lag parameter for time shifts 
-    df_cleaned['lag'] = 0
-
-    # Return back to DataTree
-    compustat_ds = xr.DataTree(
-        dataset=xr.Dataset.from_dataframe(df_cleaned)
-    ).ds
-
+    
     # Print the dataset structure
     print(compustat_ds)
 
