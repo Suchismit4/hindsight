@@ -25,7 +25,7 @@ class BaseDataSource(ABC):
         """Initialize the data source with the given data path."""
         self.data_path = data_path  # This is used in cache path generation
         self.cache_root = os.path.expanduser('~/data/cache')
-
+            
     def _apply_filters(self, df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
         """
         Apply filters to the DataFrame.

@@ -8,7 +8,12 @@
       datafmt: "STD"
       popsrc: "D"
       consol: "C"
-      date: [">=", "1959-01-01"]  
+      date: [">=", "1959-01-01"]       
+
+# - data_path: wrds/equity/crsp
+#   config:
+#     freq: "D"
+#     num_processes: 16
 
 - data_path: openbb/equity/price/historical
   config:

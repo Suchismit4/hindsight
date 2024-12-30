@@ -66,7 +66,7 @@ class DataManager:
                 raise ValueError(f"No DataLoader available for data path '{data_path}'.")
             
             loader = self.data_loaders[data_path]
-            data = loader.load_data(**config)
+            data = loader.load_data(**config) # This assumes 'data' is final and ready for data-tree.
     
             if isinstance(data, xr.Dataset):
                 data_dict[data_path] = data

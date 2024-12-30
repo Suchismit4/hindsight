@@ -72,6 +72,8 @@ class GenericOpenBBDataFetcher(BaseDataSource):
         
          # Sort by date and identifier
         df.sort_values(['date', 'identifier'], inplace=True)
+        
+        
 
         value_cols = df.columns.drop(["date", "identifier"])
                 

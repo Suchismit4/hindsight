@@ -14,7 +14,7 @@ def main():
 
     dataset = data_manager.get_data("data_requests.yaml")
 
-    # Access the Compustat dataset
+    # Access the dataset
     print(dataset)
 
 if __name__ == "__main__":

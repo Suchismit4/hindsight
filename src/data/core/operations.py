@@ -16,17 +16,6 @@ class TimeSeriesOps(eqx.Module):
     """
     
     @staticmethod
-    def merge_panel_data(
-        datas: List[Union[xr.DataArray, xr.Dataset]]
-    ) -> xr.DataArray:
-        """
-        Merges two panel data arrays along the asset dimension, aligning assets and time indices.
-        If data arrays have a 'feature' dimension, combines along that dimension.
-        """
-        raise NotImplementedError("Merging is not supported yet.")
-
-
-    @staticmethod
     @eqx.filter_jit
     def u_roll(
         data: jnp.ndarray,
@@ -50,7 +39,6 @@ class TimeSeriesOps(eqx.Module):
         Returns:
             jnp.ndarray: Data array computed with the u_roll method.
         """
-        
         
         # Set NaN values to zero to avoid issues with NaN in the data
         data = jnp.nan_to_num(data)
