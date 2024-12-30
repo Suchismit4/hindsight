@@ -56,6 +56,12 @@ class DataManager:
             data_path = request.get('data_path')
             config = request.get('config', {})
             
+            # Convert to tuples for imm.
+            filters = config.get('filters', {})
+            for k, v in filters.items():
+                if isinstance(v, list) and len(v) == 2:
+                    filters[k] = tuple(v)
+            
             if data_path not in self.data_loaders:
                 raise ValueError(f"No DataLoader available for data path '{data_path}'.")
             

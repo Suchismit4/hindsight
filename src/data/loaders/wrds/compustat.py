@@ -52,7 +52,7 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
             **config
         )
         
-        # CompuStat has duplicate multiple entries on some time-frames.
+        # CompuStat has duplicate multiple entries on some timeframes.
         # We keep only the last one and forward dates to date end.
         # Ensure 'date' is a datetime object for proper comparison
         df['date'] = pd.to_datetime(df['date'])
