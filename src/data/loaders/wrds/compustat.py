@@ -51,23 +51,16 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
             identifier_col='gvkey',
             **config
         )
-
-        # Print duplicate rows for verification of removal
-        duplicate_rows = df[df.duplicated(subset='identifier', keep=False)]
-        print("Duplicate Rows:")
-        print(duplicate_rows)
-
+        
+        # CompuStat has duplicate multiple entries on some time-frames.
+        # We keep only the last one and forward dates to date end.
         # Ensure 'date' is a datetime object for proper comparison
         df['date'] = pd.to_datetime(df['date'])
-
-        # Sort by 'date' and drop duplicates while keeping the first occurrence
+            
+        # Sort by 'date' and drop duplicates while keeping the last occurrence
         df = df.sort_values('date', ascending=False).drop_duplicates(subset='identifier', keep='last')
-
-        # Add 'lag' parameter for lookahead bias calibration
-        df['lag'] = 0
-
-        # Assert whether all identifiers are unique and print df
-        print(f"df['identifier'].is_unique(): {df['identifier'].is_unique}")
-        print(df)
-
+            
+        # Set the date to the last day of the year
+        df['date'] = df['date'].apply(lambda x: x.replace(month=12, day=31))
+            
         return df

@@ -40,11 +40,7 @@ def main():
     ])
 
     # Access the Compustat dataset
-    print("Converting to ds")
-    compustat_ds = dataset['/market/equities/wrds/compustat'].ds
-    
-    # Print the dataset structure
-    print(compustat_ds)
+    print(dataset)
 
 if __name__ == "__main__":
     main()
