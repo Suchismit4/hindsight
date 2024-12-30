@@ -37,7 +37,7 @@ class BaseDataSource(ABC):
         Returns:
             pd.DataFrame: The filtered DataFrame.
         """
-        print(df.columns)
+
         for column, condition in filters.items():
             if isinstance(condition, tuple) or isinstance(condition, list) \
                     and len(condition) == 2:
@@ -123,12 +123,19 @@ class BaseDataSource(ABC):
                 cached_params = json.load(f)
             # Direct comparison
             # Convert any sequences to sorted lists before comparison
-            for params in (cached_params, request_params):
-                for key in params:
-                    if isinstance(params[key], (list, tuple)):
-                        params[key] = sorted(list(params[key]))
-
-            return cached_params == request_params
+            def normalize(params):
+                if isinstance(params, dict):
+                    return {k: normalize(v) for k, v in params.items()}
+                if isinstance(params, (list, tuple)):
+                    return sorted(normalize(x) for x in params)
+                return params
+                
+            is_equal = normalize(cached_params) == normalize(request_params)
+            
+            if not is_equal:
+                print(f"Parameters differ:\nCached: {cached_params}\nRequest: {request_params}")
+                
+            return is_equal
         except Exception as e:
             print(f"Error reading metadata file {metadata_path}: {e}")
             return False
@@ -200,8 +207,8 @@ class BaseDataSource(ABC):
         time_indexes = ds.coords['time'].attrs.pop('indexes', None)
         
         try:
-            # Add params to ds.attrs
-            ds.attrs.update(params)
+            # TODO: Add params to ds.attrs.
+            # ds.attrs.update(params)
 
             ds.to_netcdf(
                 path=netcdf_path,
