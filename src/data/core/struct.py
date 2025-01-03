@@ -136,118 +136,208 @@ class DateTimeAccessorBase:
         Returns:
             xr.Dataset: The resulting Dataset with dimensions adjusted based on frequency.
         """
-        # Make a copy to avoid modifying the original DataFrame
-        data = data.copy()
-        # Convert the time column to datetime
-        data[time_column] = pd.to_datetime(data[time_column], errors='coerce')
+        import time
 
-        # Check for NaT values in the time column
+        print("Entering the conversion phase...")
+        overall_start = time.time()
+
+        # We create a copy to avoid modifying the original data
+        block_start = time.time()
+        data = data.copy()
+        block_end = time.time()
+        print(f"[timeit] data.copy() took {block_end - block_start:.6f} seconds")
+
+        # We convert the time column to datetime
+        block_start = time.time()
+        data[time_column] = pd.to_datetime(data[time_column], errors='coerce')
+        block_end = time.time()
+        print(f"[timeit] pd.to_datetime() took {block_end - block_start:.6f} seconds")
+
+        # We check for invalid datetime values
+        block_start = time.time()
         if data[time_column].isnull().any():
             raise ValueError(f"The '{time_column}' column contains invalid datetime values.")
+        block_end = time.time()
+        print(f"[timeit] Checking invalid datetime values took {block_end - block_start:.6f} seconds")
 
-        # Extract time components based on frequency
-        dates = data[time_column]
-
+        # We assign year, month, and day columns based on frequency
+        block_start = time.time()
         if frequency == FrequencyType.YEARLY:
-            data['year'] = dates.dt.year
+            data['year'] = data[time_column].dt.year
             data['month'] = 1
             data['day'] = 1
-            months = np.array([1])
-            days = np.array([1])
         elif frequency == FrequencyType.MONTHLY:
-            data['year'] = dates.dt.year
-            data['month'] = dates.dt.month
+            data['year'] = data[time_column].dt.year
+            data['month'] = data[time_column].dt.month
             data['day'] = 1
-            months = np.arange(1, 13)
-            days = np.array([1])
         elif frequency == FrequencyType.DAILY:
-            data['year'] = dates.dt.year
-            data['month'] = dates.dt.month
-            data['day'] = dates.dt.day
-            months = np.arange(1, 13)
-            days = np.arange(1, 32)
+            data['year'] = data[time_column].dt.year
+            data['month'] = data[time_column].dt.month
+            data['day'] = data[time_column].dt.day
         else:
             raise ValueError(f"Unsupported frequency: {frequency}")
+        block_end = time.time()
+        print(f"[timeit] Assigning year/month/day columns took {block_end - block_start:.6f} seconds")
 
-        # Prepare the unique ranges for each time component
+        # We gather the sorted unique coordinates for each dimension
+        block_start = time.time()
         years = np.sort(data['year'].unique())
-
-        # Prepare asset coordinates
+        months = np.sort(data['month'].unique()) if 'month' in data.columns else np.array([1])
+        days = np.sort(data['day'].unique()) if 'day' in data.columns else np.array([1])
         assets = np.sort(data[asset_column].unique())
+        block_end = time.time()
+        print(f"[timeit] Gathering and sorting unique coords took {block_end - block_start:.6f} seconds")
 
-        # Determine feature columns if not provided
+        # We determine the feature columns if not explicitly given
+        block_start = time.time()
         if feature_columns is None:
-            time_cols = [time_column, 'year', 'month', 'day', asset_column]
-            feature_columns = [col for col in data.columns if col not in time_cols]
+            exclude_cols = [time_column, 'year', 'month', 'day', asset_column]
+            feature_columns = [col for col in data.columns if col not in exclude_cols]
+        block_end = time.time()
+        print(f"[timeit] Determining feature columns took {block_end - block_start:.6f} seconds")
 
-        # Check if feature columns are present
-        missing_features = [col for col in feature_columns if col not in data.columns]
+        # We verify that the feature columns exist in the data
+        block_start = time.time()
+        missing_features = [fc for fc in feature_columns if fc not in data.columns]
         if missing_features:
-            raise ValueError(f"Feature columns not found in data: {missing_features}")
+            raise ValueError(f"Feature columns not found: {missing_features}")
+        block_end = time.time()
+        print(f"[timeit] Verifying feature columns existence took {block_end - block_start:.6f} seconds")
+
+        # We define arrays that map coordinate values to their indices
+        block_start = time.time()
+        y_idx = np.searchsorted(years, data['year'].to_numpy())
+        m_idx = np.searchsorted(months, data['month'].to_numpy())
+        d_idx = np.searchsorted(days, data['day'].to_numpy())
+        a_idx = np.searchsorted(assets, data[asset_column].to_numpy())
+        block_end = time.time()
+        print(f"[timeit] Defining coordinate to index mappings took {block_end - block_start:.6f} seconds")
+
+        # We now create a "flat" 1D index for each row i
+        block_start = time.time()
+        n_months = len(months)
+        n_days = len(days)
+        n_assets = len(assets)
+        idx_1d = ((y_idx * n_months + m_idx) * n_days + d_idx) * n_assets + a_idx
+        block_end = time.time()
+        print(f"[timeit] Creating flat index took {block_end - block_start:.6f} seconds")
+
+        # We define the 4D shape for the data: (years, months, days, assets)
+        block_start = time.time()
+        shape_data = (len(years), len(months), len(days), len(assets))
+        block_end = time.time()
+        print(f"[timeit] Defining shape_data took {block_end - block_start:.6f} seconds")
+
+        # We create arrays for each feature
+        block_start = time.time()
+        feature_arrays = {}
         
-        data = data[['year', 'month', 'day', time_column, asset_column, *feature_columns]]
-
-        # Create the MultiIndex for reindexing
-        index_components = [years, months, days, assets]
-        index_names = ['year', 'month', 'day', asset_column]
-        full_index = pd.MultiIndex.from_product(index_components, names=index_names)
+        # Separate numeric from non-numeric columns to reduce branching in the loop
+        numeric_cols = [fc for fc in feature_columns if data[fc].dtype.kind in 'bifc']
+        object_cols = [fc for fc in feature_columns if data[fc].dtype.kind not in 'bifc']
         
-        # Set DataFrame index and reindex to include all possible combinations
-        data.set_index(index_names, inplace=True)
-    
-        # Perform the re-indexing        
-        data = data.reindex(full_index)
+        # Create numeric feature arrays
+        for fc in numeric_cols:
+            arr = np.empty(shape_data, dtype='float64')
+            arr.fill(np.nan)
+            feature_arrays[fc] = arr
 
-        # Create the time coordinate array
-        # Extract unique time combinations to avoid duplicates
-        unique_time = full_index.droplevel(asset_column).unique()
-        time_index = pd.to_datetime({
-            'year': unique_time.get_level_values('year'),
-            'month': unique_time.get_level_values('month'),
-            'day': unique_time.get_level_values('day')
-        }, errors='coerce')
+        # Create object (non-numeric) feature arrays
+        for fc in object_cols:
+            arr = np.empty(shape_data, dtype=object)
+            arr.fill(np.nan) 
+            feature_arrays[fc] = arr
+        
+        block_end = time.time()
+        print(f"[timeit] Creating feature arrays took {block_end - block_start:.6f} seconds")
 
-        # Reshape the time data to match the dimensions without 'asset'
-        shape_time = (len(years), len(months), len(days))
-        time_data = time_index.values.reshape(shape_time)
+        # We store each feature's values in a dict for easy access
+        block_start = time.time()
+        feature_vals = {}
+        for fc in feature_columns:
+            feature_vals[fc] = data[fc].to_numpy()
+        block_end = time.time()
+        print(f"[timeit] Storing feature column values took {block_end - block_start:.6f} seconds")
 
-        # Create the time coordinate DataArray
+        # We assign feature values in a vectorized manner
+        block_start = time.time()
+        for fc in (feature_columns):
+            fa_flat = feature_arrays[fc].ravel()
+            fa_flat[idx_1d] = feature_vals[fc]
+        block_end = time.time()
+        print(f"[timeit] Vectorized assignment of feature values took {block_end - block_start:.6f} seconds")
+
+        # We create the time coordinate as a 3D array (years x months x days)
+        block_start = time.time()
+        yr_mesh, mo_mesh, dd_mesh = np.meshgrid(years, months, days, indexing='ij')
+        flat_years = yr_mesh.ravel()
+        flat_months = mo_mesh.ravel()
+        flat_days = dd_mesh.ravel()
+        time_index_flat = pd.to_datetime(
+            {
+                'year': flat_years,
+                'month': flat_months,
+                'day': flat_days
+            },
+            errors='coerce'
+        )
+        time_data = time_index_flat.values.reshape((len(years), len(months), len(days)))
+        block_end = time.time()
+        print(f"[timeit] Creating time coordinate arrays took {block_end - block_start:.6f} seconds")
+
+        # We build an xarray DataArray for the time coordinate
+        block_start = time.time()
         time_coord = xr.DataArray(
             data=time_data,
             coords={
                 'year': years,
                 'month': months,
-                'day': days,
+                'day': days
             },
             dims=['year', 'month', 'day']
         )
+        block_end = time.time()
+        print(f"[timeit] Building time DataArray took {block_end - block_start:.6f} seconds")
 
-        # Create the TimeSeriesIndex
+        # We create a dummy TimeSeriesIndex (or your real custom index)
+        block_start = time.time()
         ts_index = TimeSeriesIndex(time_coord)
+        block_end = time.time()
+        print(f"[timeit] Creating TimeSeriesIndex took {block_end - block_start:.6f} seconds")
 
-        # Initialize an empty dataset with the coordinates
+        # We build the final xarray.Dataset, attaching all coordinates
+        block_start = time.time()
         ds = xr.Dataset(
             coords={
                 'year': years,
                 'month': months,
                 'day': days,
                 'asset': assets,
-                'time': (['year', 'month', 'day'], time_data)
+                'time': (['year', 'month', 'day'], time_data),
             }
         )
+        block_end = time.time()
+        print(f"[timeit] Building initial xarray.Dataset took {block_end - block_start:.6f} seconds")
 
-        # Add each feature as a separate variable in the dataset
-        shape_data = (len(years), len(months), len(days), len(assets))
-        for feature in feature_columns:
-            var_data = data[feature].values.reshape(shape_data)
-            ds[feature] = xr.DataArray(
-                data=var_data,
+        # We add each feature's data as a variable in the dataset
+        block_start = time.time()
+        for fc in feature_columns:
+            ds[fc] = xr.DataArray(
+                data=feature_arrays[fc],
                 dims=['year', 'month', 'day', 'asset']
             )
+        block_end = time.time()
+        print(f"[timeit] Adding feature variables to Dataset took {block_end - block_start:.6f} seconds")
 
-        # Attach the TimeSeriesIndex to the time coordinate
+        # We attach the custom time index to the time coordinate
+        block_start = time.time()
         ds.coords['time'].attrs['indexes'] = {'time': ts_index}
+        block_end = time.time()
+        print(f"[timeit] Attaching custom time index took {block_end - block_start:.6f} seconds")
 
+        print("Conversion to xarray.Dataset is complete.")
+        overall_end = time.time()
+        print(f"[timeit] Overall function execution took {overall_end - overall_start:.6f} seconds")
         return ds
 
     def sel(self, time):
@@ -270,13 +360,15 @@ class DateTimeAccessorBase:
         Returns:
             Union[xr.DataArray, xr.Dataset]: The time-indexed data.
         """
-        data = self._obj
-
-        time_values = data.coords['time'].values
-        
-        if isinstance(self._obj, xr.Dataset):
-            return xr.Dataset({var: ('time', data[var].values) for var in self._obj.data_vars}, coords={'time': time_values})
-        return xr.DataArray(data.values, coords={'time': time_values}, dims=['time'], name=data.name)
+        ds = self._obj
+        ds = ds.rename({'time': 'time_3d'})  # We rename the old 3D 'time' coordinate to avoid collision.
+        ds_flat = ds.stack(stacked_time=("year", "month", "day"))  # We create a single dimension from (year, month, day).
+        ds_flat = ds_flat.rename_dims({"stacked_time": "time"})  # We rename the stacked dimension to 'time'.
+        if "stacked_time" in ds_flat.coords:
+            ds_flat = ds_flat.rename_vars({"stacked_time": "time"})
+        ds_flat = ds_flat.drop_vars("time_3d", errors="ignore")
+        ds_flat = ds_flat.assign_coords(time=("time", ds["time_3d"].values.ravel()))  # We flatten the 3D times to 1D.
+        return ds_flat
     
     def rolling(self, dim: str, window: int) -> Rolling:
         """

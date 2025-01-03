@@ -80,8 +80,7 @@ class GenericWRDSDataLoader(BaseDataSource):
         ds = self._convert_to_xarray(df, data_cols, frequency=freq_enum)
 
         # Save to cache
-        self.save_to_cache(ds, cache_path, params)
-
+        self.save_to_cache(ds, cache_path, params) # TODO REMOVE THIS COMMENT 
         return ds
 
     def _load_local(

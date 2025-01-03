@@ -49,61 +49,52 @@ class DataManager:
                 if not isinstance(data_requests, list):
                     raise TypeError("YAML config file must contain a list of data requests.")
 
-        data_dict = {}
+        # # Create a root DataTree (initially empty)
+        # root_tree = DataTree(name="root")
         
+        collected_data = {}
+
         for request in data_requests:
-          
             data_path = request.get('data_path')
             config = request.get('config', {})
-            
-            # Convert to tuples for imm.
+
+            # Convert 2-element lists to tuples if needed (for filters, etc.)
             filters = config.get('filters', {})
             for k, v in filters.items():
                 if isinstance(v, list) and len(v) == 2:
                     filters[k] = tuple(v)
-            
+
+            # Check if we have a loader for this data_path
             if data_path not in self.data_loaders:
                 raise ValueError(f"No DataLoader available for data path '{data_path}'.")
-            
+
             loader = self.data_loaders[data_path]
-            data = loader.load_data(**config) # This assumes 'data' is final and ready for data-tree.
+
+            # Load the data using the config. This should return an xr.Dataset or a DataTree.
+            data = loader.load_data(**config)
+
+            collected_data[data_path] = data
+            # # Break the path into segments
+            # path_parts = [p for p in data_path.split('/') if p.strip() != '']
+
+            # # traverse or create intermediate nodes
+            # node = root_tree
+            # for part in path_parts[:-1]:  # all but the last part
+            #     if part not in node.children:
+            #         node[part] = DataTree(name=part)
+            #     node = node[part]
+
+            # # The final path segment is where we create the node with data
+            # final_part = path_parts[-1]
+
+            # if isinstance(data, xr.Dataset):
+            #     # Create/overwrite this final node with the dataset directly
+            #     node[final_part] = DataTree(dataset=data, name=final_part)
+            # else:
+            #     raise TypeError("DataLoader returned an unsupported data type.")
+
+        return collected_data
     
-            if isinstance(data, xr.Dataset):
-                data_dict[data_path] = data
-            elif isinstance(data, DataTree):
-                # Convert the DataTree to a dictionary and merge paths
-                tree_dict = self.data_tree_to_dict(data, prefix=data_path)
-                data_dict.update(tree_dict)
-            else:
-                raise TypeError("DataLoader returned an unsupported data type.")
-            
-        # Create the DataTree from the data_dict
-        merged_tree = DataTree.from_dict(data_dict)
-        return merged_tree
-
-    def data_tree_to_dict(self, tree: xr.DataTree, prefix: str = "") -> Dict[str, xr.Dataset]:
-        """
-        Convert a DataTree into a dictionary mapping paths to datasets.
-
-        Args:
-            tree: The DataTree to convert.
-            prefix: A string to prefix to each path (used for data paths).
-
-        Returns:
-            A dictionary mapping paths to datasets.
-        """
-        data_dict = {}
-        for node in tree.subtree:
-            path = node.path
-            if node.ds is not None:
-                # Build the full path by combining the prefix and node path
-                if path in ['', '/', '.', './']:
-                    full_path = prefix
-                else:
-                    full_path = os.path.join(prefix, path.strip('/')).replace('\\', '/')
-                data_dict[full_path] = node.ds
-        return data_dict
-
     def get_available_data_paths(self) -> Dict[str, Dict[str, Any]]:
         """
         Get a dictionary of all available data paths in the registry, along with

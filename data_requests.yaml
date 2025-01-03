@@ -1,23 +1,25 @@
-- data_path: wrds/equity/compustat
+# - data_path: wrds/equity/compustat
+#   config:
+#     columns_to_read: ['gvkey', 'datadate', 'at', 'pstkl', 'txditc', 'pstkrv', 'seq', 'pstk', 'indfmt', 'datafmt', 'popsrc', 'consol']
+#     freq: "A"
+#     num_processes: 16
+#     filters:
+#       indfmt: "INDL"
+#       datafmt: "STD"
+#       popsrc: "D"
+#       consol: "C"
+#       date: [">=", "1959-01-01"]       
+
+- data_path: wrds/equity/crsp
   config:
-    columns_to_read: ['gvkey', 'datadate', 'at', 'pstkl', 'txditc', 'pstkrv', 'seq', 'pstk', 'indfmt', 'datafmt', 'popsrc', 'consol']
-    freq: "A"
+    freq: "D"
     num_processes: 16
     filters:
-      indfmt: "INDL"
-      datafmt: "STD"
-      popsrc: "D"
-      consol: "C"
-      date: [">=", "1959-01-01"]       
-
-# - data_path: wrds/equity/crsp
-#   config:
-#     freq: "D"
-#     num_processes: 16
+      date: [">=", "2015-01-01"]
 
 - data_path: openbb/equity/price/historical
   config:
     provider: "yfinance"
     symbols: ["AAPL", "TSLA"]
     start_date: "2015-01-01"
-    end_date: "2021-01-01"
+    end_date: "2023-01-01"
