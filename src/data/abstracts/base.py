@@ -62,6 +62,8 @@ class BaseDataSource(ABC):
                 df = df[df[column] == condition]
         return df
 
+    def _apply_postprocessors(self, ds: xarray.Dataset, postprocessors: Dict[str, Any]) -> xarray.Dataset
+
     def get_cache_path(self, **params) -> Path:
         """
         Generate a base 'cache path' (WITHOUT extension) based on self.data_path + hashed params.
