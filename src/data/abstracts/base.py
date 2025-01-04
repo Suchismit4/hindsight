@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from ..core.struct import DatasetDateTimeAccessor
 from ..core.struct import FrequencyType
 
+from ..processors_registry import post_processor
+
 class BaseDataSource(ABC):
     """
     Base class for handling data sources configuration and path management.
@@ -62,7 +64,23 @@ class BaseDataSource(ABC):
                 df = df[df[column] == condition]
         return df
 
-    def _apply_postprocessors(self, ds: xarray.Dataset, postprocessors: Dict[str, Any]) -> xarray.Dataset
+    def _apply_postprocessors(self, ds: xr.Dataset, postprocessors: List[str]) -> xr.Dataset:
+        """
+        Apply registered postprocessors to an xarray.Dataset sequentially as given.
+
+        Args:
+            ds (xr.Dataset): The dataset to be processed.
+            postprocessors (List[str]): A list of names identifying the postprocessors to apply.
+
+        Returns:
+            xr.Dataset: The postprocessed dataset.
+        """
+        for processor_name in postprocessors:
+            processor_func = post_processor.get(processor_name)
+            if processor_func is None:
+                raise ValueError(f"Postprocessor '{processor_name}' is not registered.")
+            ds = processor_func(ds)
+        return ds
 
     def get_cache_path(self, **params) -> Path:
         """
