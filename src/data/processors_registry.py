@@ -11,15 +11,23 @@ class ProcessorRegistry:
     and return a postprocessed xarray.Dataset.
     """
 
-    # Processor type to enforce function type
-    Processor: Callable[[xarray.Dataset, Dict[str, Any]], xarray.Dataset]
+    # Class attributes
+    Processor: Callable[[xarray.Dataset, Dict[str, Any]], xarray.Dataset] # Processor type to enforce function type
+    _instance = None                                                      # Private class variable to store the singleton instance
 
-    def __init__(self): 
+    def __new__(cls): 
         """
-        Initialize ProcessorRegistry.
+        Override the __new__ method to control the creation of a new instance.
+        Ensures that only one instance of ProcessorRegistry is created.
         """
-        # Initialize the registry dictionary
-        self._registry: Dict[str, ProcessorRegistry.Processor] = {}
+        if not cls._instance:
+            # Log creation 
+            print("Instantiating ProcessorRegistry")
+            
+            # Create Singleton instance and instantiate directory (ONLY ONCE)
+            cls._instance = super(ProcessorRegistry, cls).__new__(cls)
+            cls._instance._registry: Dict[str, ProcessorRegistry.Processor] = {}
+        return cls._instance
 
     def register(self, name: str, func: ProcessorRegistry.Processor) -> ProcessorRegistry.Processor: 
         """
@@ -118,5 +126,5 @@ class ProcessorRegistry:
         raise KeyError(f"No function registered under the name {name}")
 
 
-# create instance of ProcessorRegistry for registering functions 
+# Create instance of ProcessorRegistry for registering functions 
 post_processor = ProcessorRegistry()
