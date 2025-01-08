@@ -22,7 +22,7 @@ def main():
         "config": {
             "provider": "yfinance",
             "symbols": ["AAPL", "TSLA"],
-            "start_date": "2022-01-01",
+            "start_date": "2023-01-01",
             "end_date": "2024-12-31",
         }
     }])
@@ -73,7 +73,7 @@ def main():
     dataset = datasets["openbb/equity/price/historical"]
     
     # Rolling-EMA of "close" over a 200-day window
-    ema_dataset = dataset.dt.rolling(dim='time', window=200).reduce(ema)
+    ema_dataset = dataset.dt.rolling(dim='time', window=60).reduce(ema)
 
     # Convert to time-indexed form for plotting
     # -- Original closing prices --
@@ -89,6 +89,9 @@ def main():
     
     apple_close_ema  = apple_ema["ema_close"]
     tsla_close_ema   = tsla_ema["ema_close"]
+    
+    print(apple_close_orig[:30]) 
+    print(apple_close_ema[:30])
     
     # Create subplots: two rows, one column
     fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))

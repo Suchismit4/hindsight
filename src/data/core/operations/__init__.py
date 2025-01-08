@@ -156,7 +156,7 @@ class TimeSeriesOps(eqx.Module):
         )
 
         # Return a data array computed with the u_roll method
-        return data
+        return final
     
     
 # Standard rolling functions
