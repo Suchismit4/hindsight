@@ -461,6 +461,7 @@ class Rolling(eqx.Module):
                 
                 # Remove the extra dimension added earlier
                 rolled_full = rolled_full[..., 0]  # Shape: (T_full, assets, 1)
+                jax.debug.breakpoint()
     
                 # Reconstruct the DataArray with rolled data
                 rolled_da = stacked_obj.copy(data=rolled_full)

@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import xarray as xr
 import json
-from typing import Dict, Any, Union, Optional
+from typing import Dict, Any, Union, Optional, List
 from pathlib import Path
 import hashlib
 from abc import ABC, abstractmethod

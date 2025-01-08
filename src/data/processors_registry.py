@@ -20,16 +20,13 @@ class ProcessorRegistry:
         Override the __new__ method to control the creation of a new instance.
         Ensures that only one instance of ProcessorRegistry is created.
         """
-        if not cls._instance:
-            # Log creation 
-            print("Instantiating ProcessorRegistry")
-            
+        if not cls._instance:            
             # Create Singleton instance and instantiate directory (ONLY ONCE)
             cls._instance = super(ProcessorRegistry, cls).__new__(cls)
             cls._instance._registry: Dict[str, ProcessorRegistry.Processor] = {}
         return cls._instance
 
-    def register(self, name: str, func: ProcessorRegistry.Processor) -> ProcessorRegistry.Processor: 
+    def register(self, name: str, func: "ProcessorRegistry.Processor") -> "ProcessorRegistry.Processor": 
         """
         Register a function as a processor.
 
@@ -43,7 +40,7 @@ class ProcessorRegistry:
         self._registry[name] = func
         return func
 
-    def get(self, name: str, default: Any = None) -> ProcessorRegistry.Processor:
+    def get(self, name: str, default: Any = None) -> "ProcessorRegistry.Processor":
         """
         Retrieves a registered function by its name with an option to return a default value if
         the function name is not found. This method does not raise a KeyError.
@@ -63,7 +60,7 @@ class ProcessorRegistry:
         """
         return self._registry.get(name, default)
 
-    def __call__(self, func: Callable) -> ProcessorRegistry.Processor:
+    def __call__(self, func: Callable) -> "ProcessorRegistry.Processor":
         """
         Allows the class instance to be used as a decorator. This method is called
         when the decorator is applied to a function. Function wraps the function and then
@@ -100,7 +97,7 @@ class ProcessorRegistry:
             wrapper
         )
 
-    def __getitem__(self, name: str) -> ProcessorRegistry.Processor:
+    def __getitem__(self, name: str) -> "ProcessorRegistry.Processor":
         """
         Enables direct access to registered functions using dictionary-like subscript notation.
         This method retrieves a function by its name, throwing a KeyError if the function does not exist.
