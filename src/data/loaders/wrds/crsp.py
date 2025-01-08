@@ -2,7 +2,7 @@
 
 import pandas as pd
 import xarray as xr
-from src.data.core.struct import FrequencyType
+from src.data.core.util import FrequencyType
 from .generic import GenericWRDSDataLoader
 
 class CRSPDataFetcher(GenericWRDSDataLoader):

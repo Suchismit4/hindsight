@@ -5,7 +5,7 @@ from typing import Dict, Any, List
 import xarray as xr
 import pandas as pd
 from openbb import obb
-from src.data.core.struct import FrequencyType
+from src.data.core.util import FrequencyType
 
 class GenericOpenBBDataFetcher(BaseDataSource):
     """

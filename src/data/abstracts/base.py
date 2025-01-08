@@ -10,7 +10,8 @@ import hashlib
 from abc import ABC, abstractmethod
 
 from ..core.struct import DatasetDateTimeAccessor
-from ..core.struct import FrequencyType
+from ..core.util import FrequencyType
+from ..core.util import Loader as load
 
 class BaseDataSource(ABC):
     """
@@ -171,7 +172,7 @@ class BaseDataSource(ABC):
         try:
             ds = xr.load_dataset(netcdf_path)  # or xr.open_dataset, either is OK
 
-            from ..core.struct import TimeSeriesIndex
+            from ..core.util import TimeSeriesIndex
             
             time_coord = ds.coords['time']
             ts_index = TimeSeriesIndex(time_coord)
@@ -237,7 +238,7 @@ class BaseDataSource(ABC):
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
 
-        return DatasetDateTimeAccessor.from_table(
+        return load.from_table(
             df,
             time_column='date',
             asset_column='identifier',

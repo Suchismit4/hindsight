@@ -2,7 +2,7 @@
 
 import pandas as pd
 import xarray as xr
-from src.data.core.struct import FrequencyType
+from src.data.core.util import FrequencyType
 from typing import Dict, Any, List
 from .generic import GenericWRDSDataLoader
 

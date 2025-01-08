@@ -1,4 +1,4 @@
-# hindsight/main.py
+# hindsight/example_load.py
 
 from src import DataManager
 import xarray as xr

@@ -49,9 +49,6 @@ class DataManager:
                 if not isinstance(data_requests, list):
                     raise TypeError("YAML config file must contain a list of data requests.")
 
-        # # Create a root DataTree (initially empty)
-        # root_tree = DataTree(name="root")
-        
         collected_data = {}
 
         for request in data_requests:
@@ -74,24 +71,6 @@ class DataManager:
             data = loader.load_data(**config)
 
             collected_data[data_path] = data
-            # # Break the path into segments
-            # path_parts = [p for p in data_path.split('/') if p.strip() != '']
-
-            # # traverse or create intermediate nodes
-            # node = root_tree
-            # for part in path_parts[:-1]:  # all but the last part
-            #     if part not in node.children:
-            #         node[part] = DataTree(name=part)
-            #     node = node[part]
-
-            # # The final path segment is where we create the node with data
-            # final_part = path_parts[-1]
-
-            # if isinstance(data, xr.Dataset):
-            #     # Create/overwrite this final node with the dataset directly
-            #     node[final_part] = DataTree(dataset=data, name=final_part)
-            # else:
-            #     raise TypeError("DataLoader returned an unsupported data type.")
 
         return collected_data
     

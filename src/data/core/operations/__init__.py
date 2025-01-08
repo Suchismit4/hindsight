@@ -1,13 +1,15 @@
+# src/data/core/operations/__init__.py
+
 import math
 import numpy as np
 import pandas as pd
 import xarray as xr
+import jax
 import xarray_jax as xj
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any, Callable
 import functools
-
 
 class TimeSeriesOps(eqx.Module):
     """
@@ -46,6 +48,7 @@ class TimeSeriesOps(eqx.Module):
         # Helper method to prepare blocks of data for u_roll
         @eqx.filter_jit
         def _prepare_blocks(
+            data: jnp.ndarray,
             window_size: int,
             overlap_factor: float = None,
         ) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -98,7 +101,7 @@ class TimeSeriesOps(eqx.Module):
             return data_padded, block_indices
         
         # Prepare blocks of data for processing
-        blocks, block_indices = _prepare_blocks(window_size, overlap_factor)
+        blocks, block_indices = _prepare_blocks(data, window_size, overlap_factor)
 
         other_dims = data.shape[1:]
         num_time_steps = data.shape[0]
@@ -153,4 +156,10 @@ class TimeSeriesOps(eqx.Module):
         )
 
         # Return a data array computed with the u_roll method
-        return final
+        return data
+    
+    
+# Standard rolling functions
+
+# TODO: Create a factory possibly?
+from .standard import mean
