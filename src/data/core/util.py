@@ -362,7 +362,7 @@ class Rolling(eqx.Module):
         self.window = window
 
         self.mask = mask
-        self.indices = indices.astype(jnp.int32)
+        self.indices = jnp.where(indices == -1, 0, indices).astype(jnp.int32)
 
     @eqx.filter_jit
     def reduce(
@@ -461,7 +461,7 @@ class Rolling(eqx.Module):
                 
                 # Remove the extra dimension added earlier
                 rolled_full = rolled_full[..., 0]  # Shape: (T_full, assets, 1)
-                jax.debug.breakpoint()
+                # jax.debug.breakpoint()
     
                 # Reconstruct the DataArray with rolled data
                 rolled_da = stacked_obj.copy(data=rolled_full)

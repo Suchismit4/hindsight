@@ -22,7 +22,7 @@ def main():
         "config": {
             "provider": "yfinance",
             "symbols": ["AAPL", "TSLA"],
-            "start_date": "2024-01-01",
+            "start_date": "2015-01-01",
             "end_date": "2024-12-31",
         }
     }])
@@ -73,7 +73,7 @@ def main():
     dataset = datasets["openbb/equity/price/historical"]
     
     # Rolling-EMA of "close" over a 200-day window
-    ema_dataset = dataset.dt.rolling(dim='time', window=60).reduce(ema)
+    ema_dataset = dataset.dt.rolling(dim='time', window=252).reduce(ema)
 
     # Convert to time-indexed form for plotting
     # -- Original closing prices --
@@ -101,9 +101,9 @@ def main():
         x="time", ax=ax1, label="AAPL Close", color="blue", linestyle="-"
     )
     apple_close_ema.plot.line(
-        x="time", ax=ax1, label="AAPL EMA(10)", color="blue", linestyle="--"
+        x="time", ax=ax1, label="AAPL EMA", color="blue", linestyle="--"
     )
-    ax1.set_title("Apple (AAPL) Closing Prices vs. EMA(10)")
+    ax1.set_title("Apple (AAPL) Closing Prices vs. EMA")
     ax1.set_xlabel("Time")
     ax1.set_ylabel("Price (USD)")
     ax1.legend()
@@ -113,9 +113,9 @@ def main():
         x="time", ax=ax2, label="TSLA Close", color="red", linestyle="-"
     )
     tsla_close_ema.plot.line(
-        x="time", ax=ax2, label="TSLA EMA(10)", color="red", linestyle="--"
+        x="time", ax=ax2, label="TSLA EMA", color="red", linestyle="--"
     )
-    ax2.set_title("Tesla (TSLA) Closing Prices vs. EMA(10)")
+    ax2.set_title("Tesla (TSLA) Closing Prices vs. EMA")
     ax2.set_xlabel("Time")
     ax2.set_ylabel("Price (USD)")
     ax2.legend()
