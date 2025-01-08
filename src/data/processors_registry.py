@@ -12,8 +12,8 @@ class ProcessorRegistry:
     """
 
     # Class attributes
-    ProcessorType = Callable[[xarray.Dataset, Dict[str, Any]], xarray.Dataset] # Processor type to enforce function type
-    _instance = None                                                           # Private class variable to store the singleton instance
+    Processor: Callable[[xarray.Dataset, Dict[str, Any]], xarray.Dataset]  # Processor type to enforce function type
+    _instance = None                                                       # Private class variable to store the singleton instance
 
     def __new__(cls): 
         """
@@ -26,10 +26,10 @@ class ProcessorRegistry:
             
             # Create Singleton instance and instantiate directory (ONLY ONCE)
             cls._instance = super(ProcessorRegistry, cls).__new__(cls)
-            cls._instance._registry: Dict[str, ProcessorType] = {}
+            cls._instance._registry: Dict[str, "ProcessorRegistry.Processor"] = {}
         return cls._instance
 
-    def register(self, name: str, func: ProcessorType) -> ProcessorType: 
+    def register(self, name: str, func: "ProcessorRegistry.Processor") -> "ProcessorRegistry.Processor": 
         """
         Register a function as a processor.
 
@@ -43,18 +43,18 @@ class ProcessorRegistry:
         self._registry[name] = func
         return func
 
-    def get(self, name: str, default: Any = None) -> ProcessorType:
+    def get(self, name: str, default: Any = None) -> "ProcessorRegistry.Processor":
         """
         Retrieves a registered function by its name with an option to return a default value if
         the function name is not found. This method does not raise a KeyError.
 
         Args:
-            name (str): The name of the function to retrieve from the registry.
+            name (str):              The name of the function to retrieve from the registry.
             default (Any, optional): The default value to return if the function name is not found.
 
         Returns:
-            ProcessorType: The function registered under the specified name, or
-                           the default value if the function is not found.
+            Processor:               The function registered under the specified name, or 
+                                     the default value if the function is not found.
 
         Examples:
             function = registry.get('my_function', default=lambda x: x)
@@ -63,7 +63,7 @@ class ProcessorRegistry:
         """
         return self._registry.get(name, default)
 
-    def __call__(self, func: Callable) -> ProcessorType:
+    def __call__(self, func: "ProcessorRegistry.Processor") -> "ProcessorRegistry.Processor":
         """
         Allows the class instance to be used as a decorator. This method is called
         when the decorator is applied to a function. Function wraps the function and then
@@ -74,13 +74,12 @@ class ProcessorRegistry:
         function identifiers in the registry.
 
         Args:
-            func (ProcessorType): The function to decorate, which will be
-                                                registered in the registry with its name
-                                                possibly modified.
+            func (Processor): The function to decorate, which will be registered in the registry
+                              with its name possibly modified.
 
         Returns:
-            ProcessorType: The wrapped function, which is now registered in
-                           the registry under its potentially modified name.
+            Processor:        The wrapped function, which is now registered in the registry under its
+                              potentially modified name.
         
         Examples:
             @processor
@@ -100,7 +99,7 @@ class ProcessorRegistry:
             wrapper
         )
 
-    def __getitem__(self, name: str) -> ProcessorType:
+    def __getitem__(self, name: str) -> "ProcessorRegistry.Processor":
         """
         Enables direct access to registered functions using dictionary-like subscript notation.
         This method retrieves a function by its name, throwing a KeyError if the function does not exist.
@@ -109,7 +108,7 @@ class ProcessorRegistry:
             name (str): The name of the function to retrieve from the registry.
 
         Returns:
-            ProcessorType: The function registered under the specified name.
+            Processor: The function registered under the specified name.
 
         Raises:
             KeyError: If no function is registered under the specified name, a KeyError is raised.
