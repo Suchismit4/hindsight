@@ -440,7 +440,7 @@ class Rolling(eqx.Module):
                 data = jnp.asarray(stacked_obj.data)[..., None]  # Shape: (T, assets, 1)
             
                 # Extract valid data based on mask_indices 
-                valid_data = data[self.indices, ...]  # Shape: (T_valid, assets, 1)
+                valid_data = data[self.indices, ...]  # Shape: (T, assets, 1)
                 
                 
                 # Perform rolling

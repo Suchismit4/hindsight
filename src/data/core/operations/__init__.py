@@ -162,4 +162,4 @@ class TimeSeriesOps(eqx.Module):
 # Standard rolling functions
 
 # TODO: Create a factory possibly?
-from .standard import mean
+from .standard import mean, mode, ema, median

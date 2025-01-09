@@ -1,7 +1,13 @@
 # hindsight/example_rolling.py
+# ----------------------------------------
+# This script demonstrates how to compute and plot the rolling Exponential Moving Average (EMA)
+# for Apple's (AAPL) and Tesla's (TSLA) closing stock prices using data from yfinance.
+# The script uses the DataManager to fetch historical price data, applies a rolling window EMA,
+# and visualizes both the original closing prices and the EMA for each asset.
+# ----------------------------------------
 
 from src import DataManager
-# from src.core.operations import mean
+from src.data.core.operations import mean, median, mode, ema
 
 import xarray as xr
 import xarray_jax as xj
@@ -13,10 +19,15 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 def main():
-    
+    """
+    Main function to fetch historical stock data, compute rolling EMA,
+    and plot the original closing prices alongside the EMA for AAPL and TSLA.
+    """
+    # Initialize the DataManager to handle dataset operations
     dm = DataManager()
     
-    # Pull in the yfinance data of Apple and Tesla.
+    # Pull in the yfinance data for Apple and Tesla.
+    # Data parameters: symbols, date range, and data provider configuration.
     datasets = dm.get_data([{
         "data_path": "openbb/equity/price/historical",
         "config": {
@@ -27,76 +38,34 @@ def main():
         }
     }])
     
-    # Define a function to compute Exponential Moving Average (EMA)
-    # This function will be used with the u_roll method for efficient computation
-    @partial(jax.jit, static_argnames=['window_size'])
-    def ema(i: int, carry, block: jnp.ndarray, window_size: int):
-        """
-        Compute the Exponential Moving Average (EMA) for a given window.
-        
-        This function is designed to work with JAX's JIT compilation and
-        the u_roll method defined in the Tensor class. It computes the EMA
-        efficiently over a rolling window of data.
-        
-        Args:
-        i (int): Current index in the time series
-        state (tuple): Contains current values, carry (previous EMA), and data block
-        window_size (int): Size of the moving window
-        
-        Returns:
-        tuple: Updated state (new EMA value, carry, and data block)
-        """
-        
-        # Initialize the first value
-        if carry is None:
-            # Compute the sum of the first window
-            current_window_sum = block[:window_size].reshape(-1, 
-                                                             block.shape[1], 
-                                                             block.shape[2]).sum(axis=0)
-        
-            
-            return (current_window_sum * (1/window_size), current_window_sum * (1/window_size))
-        
-        # Get the current price
-        current_price = block[i]
-        
-        # Compute the new EMA
-        # EMA = α * current_price + (1 - α) * previous_EMA
-        # where α = 1 / (window_size)
-        alpha = 1 / window_size
-        
-        new_ema = alpha * current_price + (1 - alpha) * carry
-        
-        return (new_ema, new_ema)
-    
-    # Original dataset
+    # Extract the original dataset for historical prices.
     dataset = datasets["openbb/equity/price/historical"]
     
-    # Rolling-EMA of "close" over a 200-day window
+    # Compute the rolling Exponential Moving Average (EMA) of the "close" price over a 252-day window.
+    # 252 days correspond to roughly one trading year.
     ema_dataset = dataset.dt.rolling(dim='time', window=252).reduce(ema)
 
-    # Convert to time-indexed form for plotting
-    # -- Original closing prices --
+    # Convert the xarray datasets to time-indexed Pandas DataFrames for easier plotting.
+    # --- Original closing prices ---
     apple_orig = dataset.sel(asset="AAPL").dt.to_time_indexed()
     tsla_orig  = dataset.sel(asset="TSLA").dt.to_time_indexed()
-    # -- EMA-rolled closing prices --
+    
+    # --- EMA-rolled closing prices ---
     apple_ema = ema_dataset.sel(asset="AAPL").dt.to_time_indexed()
     tsla_ema  = ema_dataset.sel(asset="TSLA").dt.to_time_indexed()
     
-    # Extract the close and the new "ema_close"
+    # Extract the closing prices from the original and EMA datasets.
     apple_close_orig = apple_orig["close"]
     tsla_close_orig  = tsla_orig["close"]
     
     apple_close_ema  = apple_ema["ema_close"]
     tsla_close_ema   = tsla_ema["ema_close"]
     
-    print(apple_close_orig[:30]) 
-    print(apple_close_ema[:30])
-    
-    # Create subplots: two rows, one column
+    # Create subplots with two rows and one column for Apple and Tesla plots.
     fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))
 
     # --- Apple subplot ---
+    # Plot original closing prices and EMA for AAPL on the first subplot.
     apple_close_orig.plot.line(
         x="time", ax=ax1, label="AAPL Close", color="blue", linestyle="-"
     )
@@ -109,6 +78,7 @@ def main():
     ax1.legend()
 
     # --- Tesla subplot ---
+    # Plot original closing prices and EMA for TSLA on the second subplot.
     tsla_close_orig.plot.line(
         x="time", ax=ax2, label="TSLA Close", color="red", linestyle="-"
     )
@@ -120,11 +90,12 @@ def main():
     ax2.set_ylabel("Price (USD)")
     ax2.legend()
 
+    # Adjust layout for better spacing between subplots.
     plt.tight_layout()
 
-    # Save the figure
+    # Save the figure to a file.
     plt.savefig("apple_tsla_ema.png")
     plt.close()
-    
+
 if __name__ == "__main__":
     main()

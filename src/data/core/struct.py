@@ -74,7 +74,7 @@ class DateTimeAccessorBase:
         Returns:
             Rolling: An instance of the Rolling class.
         """
-        # Extract mask and indices from the Dataset
+        # Extract mask and indices from the Dataset 
         mask = jnp.array(self._obj.coords['mask'].values)  # Shape: (T,)
         indices = jnp.array(self._obj.coords['mask_indices'].values)  # Shape: (T,)
         return Rolling(self._obj, dim, window, mask, indices)
