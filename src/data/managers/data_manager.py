@@ -2,13 +2,12 @@
 
 import xarray as xr
 import xarray_jax
-from xarray import DataTree
 
 from typing import Union, List, Dict, Any
 import os
 import yaml  
 
-from .provider import _PROVIDER_REGISTRY
+from src.data.core.provider import _PROVIDER_REGISTRY
 from src.data.loaders import *
 
 class DataManager:

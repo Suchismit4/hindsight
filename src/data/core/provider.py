@@ -1,7 +1,6 @@
 # src/data/provider.py
 
-from typing import Dict, Type
-from .abstracts.base import BaseDataSource
+from typing import Dict, Any
 
 class Provider:
     def __init__(
@@ -9,7 +8,7 @@ class Provider:
         name: str,
         website: str,
         description: str,
-        fetcher_dict: Dict[str, Type[BaseDataSource]],
+        fetcher_dict: Dict[str, Any],
         repr_name: str = None,
     ):
         self.name = name

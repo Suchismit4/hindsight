@@ -1,13 +1,17 @@
 # data/loaders/wrds/generic.py
 
+"""
+Generic WRDS data loader implementation.
+"""
+
 import os
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 import xarray as xr
 import pyreadstat
 
-from src.data.abstracts.base import BaseDataSource
-from src.data.core import FrequencyType
+from src.data.loaders.abstracts.base import BaseDataSource
+from src.data.core.util import FrequencyType
 
 class GenericWRDSDataLoader(BaseDataSource):
     """

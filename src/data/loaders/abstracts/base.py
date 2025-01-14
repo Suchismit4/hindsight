@@ -1,4 +1,4 @@
-# src/data/loaders/base.py
+# src/data/loaders/abstracts/base.py
 
 import os
 import pandas as pd
@@ -9,11 +9,9 @@ from pathlib import Path
 import hashlib
 from abc import ABC, abstractmethod
 
-from ..core.struct import DatasetDateTimeAccessor
-from ..core.util import FrequencyType
-from ..core.util import Loader as load
-
-from ..processors_registry import post_processor
+from src.data.core.util import FrequencyType
+from src.data.core.util import Loader as load
+from src.data.processors.registry import post_processor
 
 class BaseDataSource(ABC):
     """
@@ -192,7 +190,7 @@ class BaseDataSource(ABC):
         try:
             ds = xr.load_dataset(netcdf_path)  # or xr.open_dataset, either is OK
 
-            from ..core.util import TimeSeriesIndex
+            from src.data.core import TimeSeriesIndex
             
             time_coord = ds.coords['time']
             ts_index = TimeSeriesIndex(time_coord)

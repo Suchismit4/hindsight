@@ -1,6 +1,10 @@
 # data/loaders/wrds/__init__.py
 
-from ...provider import Provider, register_provider
+"""
+WRDS data loaders and provider registration.
+"""
+
+from src.data.core.provider import Provider, register_provider
 
 # Fetchers
 from .compustat import CompustatDataFetcher

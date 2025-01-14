@@ -1,7 +1,8 @@
 # src/data/processors.py
 
-from processors_registry import post_processor
+from src.data.processors.registry import post_processor
 import xarray
+from typing import *
 
 @post_processor
 def processor_test(funcs: Dict[str, Any], ds: xarray.Dataset) -> xarray.Dataset:

@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from .provider import _PROVIDER_REGISTRY
+from src.data.core import *
+from src.data.core.provider import _PROVIDER_REGISTRY
 
 def get_default_cache_root() -> str:
     """Returns the default cache root directory."""
@@ -36,4 +37,4 @@ def initialize_cache_directories(cache_root: Optional[str] = None):
 # Run the initialization function when the module is imported
 initialize_cache_directories()
 
-from .manager import DataManager
+from .managers.data_manager import DataManager

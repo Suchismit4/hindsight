@@ -1,6 +1,10 @@
 # data/loaders/openbb/generic.py
 
-from src.data.abstracts.base import BaseDataSource
+"""
+Generic OpenBB data fetcher implementation.
+"""
+
+from src.data.loaders.abstracts.base import BaseDataSource
 from typing import Dict, Any, List
 import xarray as xr
 import pandas as pd

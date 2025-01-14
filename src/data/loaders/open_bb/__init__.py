@@ -1,6 +1,10 @@
 # data/loaders/openbb/__init__.py
 
-from ...provider import Provider, register_provider
+"""
+OpenBB data loaders and provider registration.
+"""
+
+from src.data.core.provider import Provider, register_provider
 from .generic import GenericOpenBBDataFetcher
 from openbb import obb
 

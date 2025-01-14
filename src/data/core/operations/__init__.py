@@ -2,10 +2,7 @@
 
 import math
 import numpy as np
-import pandas as pd
-import xarray as xr
 import jax
-import xarray_jax as xj
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any, Callable
