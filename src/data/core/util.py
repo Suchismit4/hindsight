@@ -442,7 +442,6 @@ class Rolling(eqx.Module):
                 # Extract valid data based on mask_indices 
                 valid_data = data[self.indices, ...]  # Shape: (T, assets, 1)
                 
-                
                 # Perform rolling
                 rolled_result = TimeSeriesOps.u_roll(
                     data=valid_data,
