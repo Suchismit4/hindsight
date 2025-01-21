@@ -167,6 +167,7 @@ class GenericWRDSDataLoader(BaseDataSource):
             df = self._apply_filters(df, filters)
 
         # 6. Sort by date and identifier if they exist
+        df = df.copy() # this line apparently prevents pandas error
         possible_sort_cols = [c for c in ['date', 'identifier'] if c in df.columns]
         if possible_sort_cols:
             df.sort_values(possible_sort_cols, inplace=True)

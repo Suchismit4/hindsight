@@ -28,7 +28,8 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
         """
         Adjust LOCAL_SRC depending on the requested frequency, then call the generic loader.
         """
-        user_freq_str = str(config.get('frequency', 'D')).upper()
+        # Check both 'freq' and 'frequency' keys
+        user_freq_str = str(config.get('freq') or config.get('frequency', 'D')).upper()
         
         # Find the correct path + enum from the map; default to daily if not found
         filename, freq_enum = self.CRSP_FREQUENCY_MAP.get(
@@ -58,7 +59,9 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
 
         # convert 'permco' to int if present
         if 'permco' in df.columns:
-            df['permco'] = df['permco'].astype(int)
+            # df['permco'] = df['permco'].astype(int)
+            df = df.copy()
+            df.loc[:, "permco"] = df["permco"].astype(int)
             
         # 1. Merge msenames: company names
         try:
