@@ -53,20 +53,21 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
             **config
         )
         
-        # Load additional Compustat table (e.g., filenamesq for company static info)
-        filenamesq_path = "/wrds/comp/sasdata/d_na/filenamesq.sas7bdat"
-        extra_df, _ = pyreadstat.read_file_multiprocessing(
-            pyreadstat.read_sas7bdat,
-            filenamesq_path,
-            num_processes=config.get('num_processes', 16)
-        )
-        extra_df.columns = extra_df.columns.str.lower()
-        print(extra_df.columns)
-        quit(1)
-        extra_df.rename(columns={'gvkey': 'identifier', 'conm': 'company_name'}, inplace=True)
+        try:
+            # Load additional Compustat table (e.g., filenamesq for company static info)
+            filenamesq_path = "/wrds/comp/sasdata/d_na/filenamesq.sas7bdat"
+            extra_df, _ = pyreadstat.read_file_multiprocessing(
+                pyreadstat.read_sas7bdat,
+                filenamesq_path,
+                num_processes=config.get('num_processes', 16)
+            )
+            extra_df.columns = extra_df.columns.str.lower()
+            extra_df.rename(columns={'gvkey': 'identifier', 'conm': 'company_name'}, inplace=True)
 
-        # Merge company names onto main dataframe
-        df = df.merge(extra_df[['identifier', 'company_name']], on='identifier', how='left')
+            # Merge company names onto main dataframe
+            df = df.merge(extra_df[['identifier', 'company_name']], on='identifier', how='left')
+        except Exception as e:
+            print(f"Warning: Could not merge company names due to error: {e}")
         
         # CompuStat has duplicate multiple entries on some timeframes.
         # We keep only the last one and forward dates to date end.
