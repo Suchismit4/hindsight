@@ -29,21 +29,26 @@ def main():
     # Pull in the yfinance data for Apple and Tesla.
     # Data parameters: symbols, date range, and data provider configuration.
     datasets = dm.get_data([{
-        "data_path": "openbb/equity/price/historical",
+        "data_path": "wrds/equity/crsp",
         "config": {
-            "provider": "yfinance",
-            "symbols": ["AAPL", "TSLA"],
-            "start_date": "2015-01-01",
-            "end_date": "2024-12-31",
+            "freq": "D",
+            "num_processes": 16,
+            "filters": {
+                "date": [">=", "2015-01-01"]
+            }
         }
     }])
     
     # Extract the original dataset for historical prices.
-    dataset = datasets["openbb/equity/price/historical"]
+    dataset = datasets["wrds/equity/crsp"]
     
     # Compute the rolling Exponential Moving Average (EMA) of the "close" price over a 252-day window.
     # 252 days correspond to roughly one trading year.
+    import time
+    start = time.time()
     ema_dataset = dataset.dt.rolling(dim='time', window=252).reduce(ema)
+    print(f"{time.time() - start}")
+    quit(1)
 
     # Convert the xarray datasets to time-indexed Pandas DataFrames for easier plotting.
     # --- Original closing prices ---
