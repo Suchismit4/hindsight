@@ -48,19 +48,29 @@ class DateTimeAccessorBase:
 
     def to_time_indexed(self):
         """
-        Converts multi-dimensional data into time-indexed format.
-
-        Returns:
-            Union[xr.DataArray, xr.Dataset]: The time-indexed data.
+        Converts multi-dimensional data into time-indexed format without leaving
+        inconsistent multi-index coordinates.
         """
         ds = self._obj
-        ds = ds.rename({'time': 'time_3d'})  # We rename the old 3D 'time' coordinate to avoid collision.
-        ds_flat = ds.stack(stacked_time=("year", "month", "day"))  # We create a single dimension from (year, month, day).
-        ds_flat = ds_flat.rename_dims({"stacked_time": "time"})  # We rename the stacked dimension to 'time'.
-        if "stacked_time" in ds_flat.coords:
-            ds_flat = ds_flat.rename_vars({"stacked_time": "time"})
-        ds_flat = ds_flat.drop_vars("time_3d", errors="ignore")
-        ds_flat = ds_flat.assign_coords(time=("time", ds["time_3d"].values.ravel()))  # We flatten the 3D times to 1D.
+
+        # Rename original 3D 'time' to avoid collision
+        ds = ds.rename({'time': 'time_3d'})
+        
+        # Stack year/month/day into a single dimension
+        ds_flat = ds.stack(stacked_time=("year", "month", "day"))
+        
+        # Prepare to clean up old coordinates before assigning new time
+        vars_to_drop = ['time', 'year', 'month', 'day', 'time_3d', 'stacked_time']
+        
+        # Remove old coordinates FIRST to prevent inconsistency
+        ds_flat = ds_flat.drop_vars(vars_to_drop, errors="ignore")
+        
+        # Rename dimension and assign new time coordinate
+        ds_flat = ds_flat.rename_dims({"stacked_time": "time"})
+        ds_flat = ds_flat.assign_coords(
+            time=("time", ds["time_3d"].values.ravel())
+        )
+        
         return ds_flat
     
     def rolling(self, dim: str, window: int) -> 'Rolling':
