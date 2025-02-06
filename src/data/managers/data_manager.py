@@ -53,6 +53,10 @@ class DataManager:
         for request in data_requests:
             data_path = request.get('data_path')
             config = request.get('config', {})
+            
+            # Enforce that both start_date and end_date are provided.
+            if not config.get("start_date") or not config.get("end_date"):
+                raise ValueError(f"Request for '{data_path}' must specify both 'start_date' and 'end_date'.")
 
             # Convert 2-element lists to tuples if needed (for filters, etc.)
             filters = config.get('filters', {})

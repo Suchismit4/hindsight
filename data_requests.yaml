@@ -16,6 +16,21 @@
     num_processes: 16
     filters:
       date: [">=", "2015-01-01"]
+    postprocessors:
+    - operation: patch
+      params:
+        src: delistings      
+        rename: [["dlstdt", "time"]]
+        identifier: permno
+        replace_to: ret
+        replace_from: dlret
+    - operation: merge_2d_table
+      params:
+        src: msenames
+        identifier: permno
+        value: comnam
+        dim: asset
+
 
 - data_path: openbb/equity/price/historical
   config:

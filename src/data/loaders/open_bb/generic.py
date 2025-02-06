@@ -8,7 +8,6 @@ from src.data.loaders.abstracts.base import BaseDataSource
 from typing import Dict, Any, List
 import xarray as xr
 import pandas as pd
-from openbb import obb
 from src.data.core.util import FrequencyType
 
 class GenericOpenBBDataFetcher(BaseDataSource):
@@ -49,6 +48,9 @@ class GenericOpenBBDataFetcher(BaseDataSource):
             return cached_ds
 
         # Resolve the function in OpenBB
+        import importlib
+        obb = importlib.import_module('openbb')
+    
         module = obb
         for attr in dot_path.split("."):
             module = getattr(module, attr, None)
@@ -76,7 +78,6 @@ class GenericOpenBBDataFetcher(BaseDataSource):
         
          # Sort by date and identifier
         df.sort_values(['date', 'identifier'], inplace=True)
-        
         
 
         value_cols = df.columns.drop(["date", "identifier"])

@@ -37,60 +37,82 @@ class TimeSeriesIndex:
     
     def __init__(self, time_coord: xr.DataArray):
         self.time_coord = time_coord
-        self.shape = time_coord.shape # (Y, Q, M, D, I), N, J
-
-        # Flatten the time coordinate values and create a mapping to flat indices
-        times = pd.Series(time_coord.values.ravel())
-        valid_times = times[~pd.isnull(times)]
+       
+        # Use np.ravel with C order to obtain a flat view of the time coordinate.
+        # This ensures that the flattening order is consistent with np.unravel_index later.
+        self._flat_times = time_coord.values.ravel(order="C")
+        self.shape = time_coord.shape  # the original shape
         
+        # Create a Series from the flattened times.
+        times = pd.Series(self._flat_times)
+        valid_times = times[~pd.isnull(times)]
         self.time_to_index = pd.Series(
-            np.arange(len(times))[~pd.isnull(times)],
+            np.arange(len(self._flat_times))[~pd.isnull(times)],
             index=valid_times
         )
+
 
     def sel(self, labels, method=None, tolerance=None):
         """
         Selects indices corresponding to the given labels.
 
         Parameters:
-            labels: The timestamp(s) to select.
+            labels: The timestamp(s) to select. This can be:
+                    - A single timestamp (string or datetime-like)
+                    - A list or array of timestamps
+                    - A pandas DatetimeIndex
+                    - A slice with both start and stop defined (e.g. slice('2020-01-01', '2020-12-31'))
             method: Method for selection (not used here).
             tolerance: Tolerance for inexact matches (not used here).
 
         Returns:
-            dict: A dictionary mapping dimension names to indices.
+            dict: A dictionary mapping dimension names to multi-dimensional indices.
+
+        Note:
+            This implementation assumes that the flattened time coordinate (derived via ravel(order="C"))
+            corresponds to the same ordering that np.unravel_index will use.
         """
-        if isinstance(labels, pd.DatetimeIndex):
-            labels_array = labels.to_numpy()
-        elif isinstance(labels, (list, np.ndarray)):
-            labels_array = pd.to_datetime(labels).to_numpy()
+        # Handle the case where labels is a slice.
+        if isinstance(labels, slice):
+            if labels.start is None or labels.stop is None:
+                raise ValueError("Slice must have both start and stop defined.")
+            start = pd.to_datetime(labels.start)
+            stop = pd.to_datetime(labels.stop)
+            # Use slice_locs on the Series index (which is assumed sorted in C order)
+            start_loc, stop_loc = self.time_to_index.index.slice_locs(start, stop)
+            flat_indices = self.time_to_index.iloc[start_loc:stop_loc].values
         else:
-            labels_array = pd.to_datetime([labels]).to_numpy()
-        
-        # Initialize a list to collect flat indices
-        flat_indices = []
-        for label in labels_array:
-            try:
-                locs = self.time_to_index.index.get_loc(label)
-                if isinstance(locs, slice):
-                    indices = self.time_to_index.iloc[locs].values
-                elif isinstance(locs, np.ndarray):
-                    indices = self.time_to_index.iloc[locs].values
-                elif isinstance(locs, int):
-                    indices = [self.time_to_index.iloc[locs]]
-                else:
+            # Convert the input into an array of timestamps.
+            if isinstance(labels, pd.DatetimeIndex):
+                labels_array = labels.to_numpy()
+            elif isinstance(labels, (list, np.ndarray)):
+                labels_array = pd.to_datetime(labels).to_numpy()
+            else:
+                labels_array = pd.to_datetime([labels]).to_numpy()
+
+            flat_indices = []
+            for label in labels_array:
+                try:
+                    locs = self.time_to_index.index.get_loc(label)
+                    if isinstance(locs, slice):
+                        indices = self.time_to_index.iloc[locs].values
+                    elif isinstance(locs, np.ndarray):
+                        indices = self.time_to_index.iloc[locs].values
+                    elif isinstance(locs, int):
+                        indices = [self.time_to_index.iloc[locs]]
+                    else:
+                        raise KeyError(f"Date {label} not found in index")
+                    flat_indices.extend(indices)
+                except KeyError:
                     raise KeyError(f"Date {label} not found in index")
-                flat_indices.extend(indices)
-            except KeyError:
-                raise KeyError(f"Date {label} not found in index")
-        
-        if not flat_indices:
-            raise KeyError(f"Dates {labels_array} not found in index")
-        
-        flat_indices = np.array(flat_indices)
+            if not flat_indices:
+                raise KeyError(f"Dates {labels_array} not found in index")
+            flat_indices = np.array(flat_indices)
+
+        # Convert the flat indices back to multi-dimensional indices using the original shape.
         multi_indices = np.unravel_index(flat_indices.astype(int), self.shape)
         dim_names = self.time_coord.dims
-
+        
         return dict(zip(dim_names, multi_indices))
 
 class Loader:
@@ -284,6 +306,8 @@ class Loader:
                     dims=['year', 'month', 'day', 'asset']
                 )
 
+        # Add the TimeSeriesIndexing
+        ds.coords['time'].attrs['indexes'] = {'time': ts_index}
         
         # Create a stacked DataArray for mask and indices
         first_var = list(ds.data_vars)[0]
@@ -363,116 +387,76 @@ class Rolling(eqx.Module):
 
         self.mask = mask
         self.indices = jnp.where(indices == -1, 0, indices).astype(jnp.int32)
-
-    @eqx.filter_jit
-    def reduce(
-        self, 
-        func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
-        overlap_factor: Optional[float] = None,
-    ) -> Union[xr.DataArray, xr.Dataset]:
+        
+    def reduce(self, 
+               func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
+               overlap_factor: Optional[float] = None
+              ) -> Union[xr.DataArray, xr.Dataset]:
         """
-        Applies the rolling function using the provided callable.
-        
-        Args:
-            func: A JIT-compatible function with signature
-                    (i, carry, block, window_size) > (value, new_carry).
-            overlap_factor: Optional overlap factor for block-based rolling.
-
-        Returns:
-            A new xarray object with the same structure as self.obj
-            but with rolled computations applied.
+        Main reduce method. For a Dataset, process each variable separately:
+        - For numeric variables, apply the rolling operation.
+        - For non-numeric variables, leave them unchanged.
         """
-        
-        if isinstance(self.obj, xr.Dataset) and len(self.obj.data_vars) > 0:
-            # pick the first variable
-            a_var = list(self.obj.data_vars)[0]
-            var_dims = self.obj[a_var].dims
-        elif isinstance(self.obj, xr.DataArray):
-            var_dims = self.obj.dims
-        else:
-            var_dims = ()
-
-        is_multidim_time = set(["year", "month", "day"]).issubset(var_dims)
-        user_dim_exists = (self.dim in var_dims)
-        wants_time = (self.dim == "time")
-        
-        if not user_dim_exists and not (wants_time and is_multidim_time):
-            # dimension is not in var_dims, and we are not in the "flatten time" case
-            raise ValueError(
-                f"Dimension '{self.dim}' not found in the xarray object. "
-                "Nor is it a recognized multi-dim time (year, month, day)."
-            )
-        
         if isinstance(self.obj, xr.Dataset):
-            rolled_data = { }
-            
-            # For each data array, we will reduce it with the fn
+            rolled_data = {}
             for var_name, da in self.obj.data_vars.items():
-                # Recursively call Rolling on the DataArray
-                # TODO: Find a better strategy to avoid non-linear and untrackable call maps.
-                rolled_da = Rolling(da, self.dim, self.window, self.mask, self.indices).reduce(
-                    func=func,
-                    overlap_factor=overlap_factor
-                )
-                rolled_data[f"{func.__name__}_{var_name}"] = rolled_da
-                
-            # Rebuild a new Dataset
-            new_ds = xr.Dataset(
-                data_vars=rolled_data,
-                coords=self.obj.coords,
-                attrs=self.obj.attrs
-            )
-
-            # Attached Time based indexing object.
-            if "time" in new_ds.coords and "time" in self.obj.coords:
-                old_time_attrs = self.obj.coords["time"].attrs
-                new_ds.coords["time"].attrs.update(old_time_attrs)
-                
-            return new_ds
-            
+                if np.issubdtype(da.dtype, np.number):
+                    rolled_data[var_name] = Rolling(da, self.dim, self.window, self.mask, self.indices).reduce(
+                        func, overlap_factor=overlap_factor
+                    )
+                else:
+                    rolled_data[var_name] = da
+            return xr.Dataset(rolled_data, coords=self.obj.coords, attrs=self.obj.attrs)
         elif isinstance(self.obj, xr.DataArray):
-            
-            if wants_time and is_multidim_time:
-                stacked_obj = self.obj.stack(time_index=("year", "month", "day"))
-                stacked_obj = stacked_obj.transpose("time_index", ...)
-
-                # Extract data as JAX array and expand dims to (T, assets, 1)
-                data = jnp.asarray(stacked_obj.data)[..., None]  # Shape: (T, assets, 1)
-            
-                # Extract valid data based on mask_indices 
-                valid_data = data[self.indices, ...]  # Shape: (T, assets, 1)
-                
-                # Perform rolling
-                rolled_result = TimeSeriesOps.u_roll(
-                    data=valid_data,
-                    window_size=self.window,
-                    func=func,
-                    overlap_factor=overlap_factor
-                )
-                
-                T_full = data.shape[0]
-                
-                # Initialize a full array with NaNs
-                rolled_full = jnp.full((T_full, *rolled_result.shape[1:]), jnp.nan, dtype=rolled_result.dtype)
-                
-                # Insert rolled results back into their original positions
-                rolled_full = rolled_full.at[self.indices].set(rolled_result)
-                
-                # Remove the extra dimension added earlier
-                rolled_full = rolled_full[..., 0]  # Shape: (T_full, assets, 1)
-                # jax.debug.breakpoint()
-    
-                # Reconstruct the DataArray with rolled data
-                rolled_da = stacked_obj.copy(data=rolled_full)
-                
-                # Unstack back to original multi-dimensional time
-                unstacked_da = rolled_da.unstack("time_index")
-    
-                return unstacked_da
-
-            else: 
-                raise ValueError('Asset cross-sectional rolling not supported yet.')
+            return self._reduce_dataarray(func, overlap_factor)
         else:
             raise TypeError("Unsupported xarray object type.")
     
-            
+    @eqx.filter_jit
+    def _reduce_dataarray(self, 
+                          func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
+                          overlap_factor: Optional[float] = None
+                         ) -> xr.DataArray:
+        """
+        Jitted rolling reduction for a DataArray. This method ensures that the underlying
+        array is numeric before proceeding.
+        """
+        # If the DataArray is not numeric, simply return it.
+        if not np.issubdtype(self.obj.dtype, np.number):
+            return self.obj
+
+        # For time-based rolling, we expect a multi-dimensional time (year, month, day).
+        if self.dim == "time" and set(["year", "month", "day"]).issubset(self.obj.dims):
+            # Stack the time dimensions.
+            stacked_obj = self.obj.stack(time_index=("year", "month", "day"))
+            stacked_obj = stacked_obj.transpose("time_index", ...)
+
+            # Convert to a JAX array and add a trailing singleton dimension.
+            data = jnp.asarray(stacked_obj.data)[..., None]  # Expected shape: (T, assets, 1)
+
+            # Select valid data based on self.indices.
+            valid_data = data[self.indices, ...]  # Shape: (T, assets, 1)
+
+            # Apply the rolling function.
+            rolled_result = TimeSeriesOps.u_roll(
+                data=valid_data,
+                window_size=self.window,
+                func=func,
+                overlap_factor=overlap_factor
+            )
+
+            T_full = data.shape[0]
+            # Prepare a full array (with the original time dimension) filled with NaNs.
+            rolled_full = jnp.full((T_full, *rolled_result.shape[1:]), jnp.nan, dtype=rolled_result.dtype)
+            # Insert the rolled results into their proper positions.
+            rolled_full = rolled_full.at[self.indices].set(rolled_result)
+            # Remove the extra dimension.
+            rolled_full = rolled_full[..., 0]  # Final shape: (T_full, assets)
+
+            # Reconstruct the DataArray with the rolled data.
+            rolled_da = stacked_obj.copy(data=rolled_full)
+            # Unstack back to the original multi-dimensional time coordinates.
+            unstacked_da = rolled_da.unstack("time_index")
+            return unstacked_da
+        else:
+            raise ValueError('Asset cross-sectional rolling not supported yet.')
