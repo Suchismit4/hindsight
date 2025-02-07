@@ -9,6 +9,7 @@ import yaml
 
 from src.data.core.provider import _PROVIDER_REGISTRY
 from src.data.loaders import *
+from src.data.core.cache import CacheManager
 
 class DataManager:
     """
@@ -17,16 +18,20 @@ class DataManager:
     This class serves as the main interface for clients to interact with the
     data framework. It coordinates between data loaders to provide a unified data access layer.
     """
-
+    
+    _data_loaders = {}
+    
     def __init__(self):
         """
         Initialize the DataManager.
 
         The manager collects data loaders from all registered providers upon initialization.
         """
-        self.data_loaders = {}
+        self.cache_manager = CacheManager()  # use the centralized cache manager
+        self._data_loaders = {}
         for provider in _PROVIDER_REGISTRY.values():
-            self.data_loaders.update(provider.data_loaders)
+            self._data_loaders.update(provider.data_loaders)
+
 
     def get_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> xr.DataTree:
         """
@@ -58,20 +63,16 @@ class DataManager:
             if not config.get("start_date") or not config.get("end_date"):
                 raise ValueError(f"Request for '{data_path}' must specify both 'start_date' and 'end_date'.")
 
-            # Convert 2-element lists to tuples if needed (for filters, etc.)
-            filters = config.get('filters', {})
-            for k, v in filters.items():
-                if isinstance(v, list) and len(v) == 2:
-                    filters[k] = tuple(v)
-
             # Check if we have a loader for this data_path
-            if data_path not in self.data_loaders:
+            if data_path not in self._data_loaders:
                 raise ValueError(f"No DataLoader available for data path '{data_path}'.")
 
-            loader = self.data_loaders[data_path]
+            loader = self._data_loaders[data_path]
 
-            # Load the data using the config. This should return an xr.Dataset or a DataTree.
-            data = loader.load_data(**config)
+            data = self.cache_manager.fetch(relative_path=data_path, parameters=request, data_loader=loader)
+            
+            if data is None:
+                raise BrokenPipeError("Something went wrong trying to fetch data from cache...")
 
             collected_data[data_path] = data
 
@@ -114,8 +115,8 @@ class DataManager:
         results = {}
         
         for provider in _PROVIDER_REGISTRY.values(): 
-            # provider.data_loaders is a dict: { "wrds/equities/compustat": loader, ... }
-            for dp in provider.data_loaders.keys():
+            # provider._data_loaders is a dict: { "wrds/equities/compustat": loader, ... }
+            for dp in provider._data_loaders.keys():
                 if provider.name == "openbb":
                     # Look up sub-providers from coverage_map
                     # Normalize the data path to ensure consistent lookup

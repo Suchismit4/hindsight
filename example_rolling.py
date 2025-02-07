@@ -31,33 +31,12 @@ def main():
     datasets = dm.get_data([{
         "data_path": "wrds/equity/crsp",
         "config": {
-            "freq": "D",
             "start_date": "2015-01-01",
-            "end_date": "2024-01-01",
+            "end_date":   "2024-01-01",
+            "freq": "D",
             "filters": {
                 "date": [">=", "2015-01-01"]
-            },
-            "postprocessors": [
-                {
-                    "operation": "replace",
-                    "params": {
-                        "src": "delistings",
-                        "rename": [["dlstdt", "time"]],
-                        "identifier": "permno",
-                        "from": "dlret",
-                        "to": "ret",
-                    }
-                },
-                {
-                    "operation": "merge_2d_table",
-                    "params": {
-                        "src": "msenames",
-                        "identifier": "permno",
-                        "ax2": "comnam",
-                        "ax1": "asset",
-                    }
-                }
-            ]
+            }
         }
     }])
 
@@ -71,7 +50,7 @@ def main():
     
     import time
     start = time.time()
-    ema_dataset = dataset.dt.rolling(dim='time', window=252).reduce(ema)
+    ema_dataset = dataset.dt.rolling(dim='time', window=252 * 2).reduce(ema)
     print(f"Took: {time.time() - start}")
     
     print(ema_dataset)
@@ -85,24 +64,24 @@ def main():
     apple_ema = ema_dataset.sel(asset=14593).dt.to_time_indexed()
     tsla_ema  = ema_dataset.sel(asset=93436.).dt.to_time_indexed()
     
-    # Extract the closing prices from the original and EMA datasets.
+    # --- Extract the closing prices and returns from the original and EMA datasets ---
     apple_close_orig = apple_orig["adj_prc"]
-    tsla_close_orig  = tsla_orig["adj_prc"]
+    tsla_close_orig = tsla_orig["adj_prc"]
+    apple_close_orig_returns = apple_orig["ret"]
+    tsla_close_orig_returns = tsla_orig["ret"]
+
+    apple_close_ema = apple_ema["adj_prc"]
+    tsla_close_ema = tsla_ema["adj_prc"]
+    apple_close_ema_returns = apple_ema["ret"] 
+    tsla_close_ema_returns = tsla_ema["ret"]   
     
-    apple_close_ema  = apple_ema["adj_prc"]
-    tsla_close_ema   = tsla_ema["adj_prc"]
-    
-    # Create subplots with two rows and one column for Apple and Tesla plots.
+    # --- Create subplots for the closing prices and EMA ---
     fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))
 
     # --- Apple subplot ---
     # Plot original closing prices and EMA for AAPL on the first subplot.
-    apple_close_orig.plot.line(
-        x="time", ax=ax1, label="AAPL Close", color="blue", linestyle="-"
-    )
-    apple_close_ema.plot.line(
-        x="time", ax=ax1, label="AAPL EMA", color="blue", linestyle="--"
-    )
+    apple_close_orig.plot.line(x="time", ax=ax1, label="AAPL Close", color="blue", linestyle="-")
+    apple_close_ema.plot.line(x="time", ax=ax1, label="AAPL EMA", color="blue", linestyle="--")
     ax1.set_title("Apple (AAPL) Closing Prices vs. EMA")
     ax1.set_xlabel("Time")
     ax1.set_ylabel("Price (USD)")
@@ -110,12 +89,8 @@ def main():
 
     # --- Tesla subplot ---
     # Plot original closing prices and EMA for TSLA on the second subplot.
-    tsla_close_orig.plot.line(
-        x="time", ax=ax2, label="TSLA Close", color="red", linestyle="-"
-    )
-    tsla_close_ema.plot.line(
-        x="time", ax=ax2, label="TSLA EMA", color="red", linestyle="--"
-    )
+    tsla_close_orig.plot.line(x="time", ax=ax2, label="TSLA Close", color="red", linestyle="-")
+    tsla_close_ema.plot.line(x="time", ax=ax2, label="TSLA EMA", color="red", linestyle="--")
     ax2.set_title("Tesla (TSLA) Closing Prices vs. EMA")
     ax2.set_xlabel("Time")
     ax2.set_ylabel("Price (USD)")
@@ -124,8 +99,41 @@ def main():
     # Adjust layout for better spacing between subplots.
     plt.tight_layout()
 
-    # Save the figure to a file.
+    # Save the closing prices figure to a file.
     plt.savefig("apple_tsla_ema.png")
+    plt.close()
+
+
+    # --- Create a new figure for plotting returns ---
+    fig, (ax3, ax4) = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))
+
+    # --- Apple returns subplot ---
+    # Plot original returns and (if applicable) EMA returns for AAPL.
+    apple_close_orig_returns.plot.line(x="time", ax=ax3, label="AAPL Returns", color="blue", linestyle="-", alpha=0.1)
+    apple_close_ema_returns.plot.line(x="time", ax=ax3, label="AAPL EMA Returns", color="blue", linestyle="--")
+    # Add a horizontal line at 0 to indicate zero returns.
+    ax3.axhline(y=0, color="black", linewidth=1)
+    ax3.set_title("Apple (AAPL) Returns vs. EMA Returns")
+    ax3.set_xlabel("Time")
+    ax3.set_ylabel("Returns")
+    ax3.legend()
+
+    # --- Tesla returns subplot ---
+    # Plot original returns and (if applicable) EMA returns for TSLA.
+    tsla_close_orig_returns.plot.line(x="time", ax=ax4, label="TSLA Returns", color="red", linestyle="-", alpha=0.1)
+    tsla_close_ema_returns.plot.line(x="time", ax=ax4, label="TSLA EMA Returns", color="red", linestyle="--")
+    # Add a horizontal line at 0 to indicate zero returns.
+    ax4.axhline(y=0, color="black", linewidth=1)
+    ax4.set_title("Tesla (TSLA) Returns vs. EMA Returns")
+    ax4.set_xlabel("Time")
+    ax4.set_ylabel("Returns")
+    ax4.legend()
+
+    # Adjust layout for better spacing between subplots.
+    plt.tight_layout()
+
+    # Save the returns figure to a file.
+    plt.savefig("apple_tsla_returns.png")
     plt.close()
 
 if __name__ == "__main__":

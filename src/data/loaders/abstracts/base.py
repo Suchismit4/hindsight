@@ -26,7 +26,6 @@ class BaseDataSource(ABC):
     def __init__(self, data_path: str):
         """Initialize the data source with the given data path."""
         self.data_path = data_path  # This is used in cache path generation
-        self.cache_manager = CacheManager()  # use the centralized cache manager
             
     def _apply_filters(self, df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
         """
@@ -39,6 +38,11 @@ class BaseDataSource(ABC):
         Returns:
             pd.DataFrame: The filtered DataFrame.
         """
+
+        # Explicitly make sure filters are of proper type
+        for k, v in filters.items():
+            if isinstance(v, list) and len(v) == 2:
+                filters[k] = tuple(v)
 
         for column, condition in filters.items():
             if isinstance(condition, tuple) or isinstance(condition, list) \

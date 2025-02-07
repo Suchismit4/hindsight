@@ -1,5 +1,6 @@
 # src/data/core/util.py
 
+import os
 import numpy as np
 import xarray as xr
 import xarray_jax as xj
@@ -10,6 +11,7 @@ import functools
 from enum import Enum
 import pandas as pd
 import jax
+import pyreadstat
 
 # Import the core operations
 from src.data.core.operations import TimeSeriesOps
@@ -116,7 +118,85 @@ class TimeSeriesIndex:
         return dict(zip(dim_names, multi_indices))
 
 class Loader:
+    
+    DEFAULT_PATHS = {
+        "msenames": "/wrds/crsp/sasdata/a_stock/msenames.sas7bdat",
+        "delistings": "/wrds/crsp/sasdata/a_stock/msedelist.sas7bdat"
+    }
+    
+    @classmethod
+    def load_external_proc_file(cls, src_or_name: str, identifier: str, rename: Optional[List[List[str]]] = None) -> xr.Dataset | pd.DataFrame:
+        """
+        Load an external SAS file (specified either by a file path or a known source name)
+        and convert it to an xarray.Dataset.
+        """
+        
+        file_path = None
 
+        # If src_or_name is a valid file path, use it; otherwise, try a default mapping.
+        if os.path.exists(src_or_name):
+            file_path = src_or_name
+        elif src_or_name in cls.DEFAULT_PATHS:
+            file_path = cls.DEFAULT_PATHS[src_or_name]
+        else:
+            raise ValueError(f"Unknown external source: {src_or_name}")
+
+        if not os.path.exists(file_path):
+            raise ValueError(f"File for external source '{src_or_name}' not found at {file_path}")
+
+        df, _ = pyreadstat.read_file_multiprocessing(
+            pyreadstat.read_sas7bdat,
+            file_path,
+            num_processes=16
+        )
+        
+        # Normalize columns to lowercase.
+        df.columns = df.columns.str.lower()
+
+        # Apply any custom renaming if provided.
+        if rename:
+            for mapping in rename:
+                if len(mapping) != 2:
+                    raise ValueError("Each rename mapping must have exactly two elements: [source, destination].")
+                src_col, dest_col = mapping
+                src_col = src_col.lower()
+                dest_col = dest_col.lower()
+                if src_col in df.columns:
+                    df.rename(columns={src_col: dest_col}, inplace=True)
+
+        # Ensure that the designated identifier column is renamed to "identifier".
+        identifier = identifier.lower()
+        if identifier in df.columns:
+            df.rename(columns={identifier: "identifier"}, inplace=True)
+        else:
+            raise ValueError(f"Identifier '{identifier}' was not found in external file columns: {df.columns.tolist()}")
+        
+        # Determine the time column: if 'time' exists (possibly via renaming), use it; else fall back on 'date'.
+        time_column = "time" if "time" in df.columns else ("date" if "date" in df.columns else None)
+        
+        # Convert the DataFrame to an xarray.Dataset using Loader.from_table.
+        if time_column:
+            df[time_column] = cls.convert_sas_date(df[time_column])
+            ds = Loader.from_table(df, time_column=time_column, asset_column="identifier")
+        else:
+            return df
+        return ds
+
+    @staticmethod
+    def convert_sas_date(sas_date_col: pd.Series, epoch: str = '1960-01-01') -> pd.Series:
+        """
+        Convert a numeric SAS date column to a proper Pandas datetime.
+
+        Args:
+            sas_date_col (pd.Series): Column of SAS date ints.
+            epoch (str): Base epoch for SAS (default '1960-01-01').
+
+        Returns:
+            pd.Series: Date column in datetime format.
+        """
+        sas_epoch = pd.to_datetime(epoch)
+        return sas_epoch + pd.to_timedelta(sas_date_col.astype(int), unit='D')
+    
     @classmethod
     def from_table(
         cls,

@@ -56,11 +56,13 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
          - Merging of msenames is removed to avoid duplicating company names.
          - Merges msedist (distributions) and msedelist (delisting information) remain.
         """
+        
+                    
         df = super()._preprocess_df(
             df,
             date_col='date',
             identifier_col='permno',
-            **config
+            filters=config.get('filters', {})
         )
 
         # Convert 'permco' to int if present.
