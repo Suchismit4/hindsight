@@ -36,7 +36,28 @@ def main():
             "freq": "D",
             "filters": {
                 "date": [">=", "2015-01-01"]
-            }
+            },
+            "postprocessors": [
+                {
+                    "proc": "replace",
+                    "options": {
+                        "src": "delistings",
+                        "rename": [["dlstdt", "time"]],
+                        "identifier": "permno",
+                        "from": "dlret",
+                        "to": "ret",
+                    }
+                },
+                {
+                    "proc": "merge_2d_table",
+                    "options": {
+                        "src": "msenames",
+                        "identifier": "permno",
+                        "ax2": "comnam",
+                        "ax1": "asset",
+                    }
+                }
+            ]
         }
     }])
 
@@ -50,7 +71,7 @@ def main():
     
     import time
     start = time.time()
-    ema_dataset = dataset.dt.rolling(dim='time', window=252 * 2).reduce(ema)
+    ema_dataset = dataset.dt.rolling(dim='time', window=252).reduce(ema)
     print(f"Took: {time.time() - start}")
     
     print(ema_dataset)
@@ -109,7 +130,7 @@ def main():
 
     # --- Apple returns subplot ---
     # Plot original returns and (if applicable) EMA returns for AAPL.
-    apple_close_orig_returns.plot.line(x="time", ax=ax3, label="AAPL Returns", color="blue", linestyle="-", alpha=0.1)
+    apple_close_orig_returns.plot.line(x="time", ax=ax3, label="AAPL Returns", color="blue", linestyle="-", alpha=0.15)
     apple_close_ema_returns.plot.line(x="time", ax=ax3, label="AAPL EMA Returns", color="blue", linestyle="--")
     # Add a horizontal line at 0 to indicate zero returns.
     ax3.axhline(y=0, color="black", linewidth=1)
@@ -120,7 +141,7 @@ def main():
 
     # --- Tesla returns subplot ---
     # Plot original returns and (if applicable) EMA returns for TSLA.
-    tsla_close_orig_returns.plot.line(x="time", ax=ax4, label="TSLA Returns", color="red", linestyle="-", alpha=0.1)
+    tsla_close_orig_returns.plot.line(x="time", ax=ax4, label="TSLA Returns", color="red", linestyle="-", alpha=0.15)
     tsla_close_ema_returns.plot.line(x="time", ax=ax4, label="TSLA EMA Returns", color="red", linestyle="--")
     # Add a horizontal line at 0 to indicate zero returns.
     ax4.axhline(y=0, color="black", linewidth=1)
