@@ -1,91 +1,82 @@
-# src/data/processor_registry.py
+# src/data/processors/registry.py
 
 from functools import wraps
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, List, Dict, Any, Callable, TypeVar, Generic
 import xarray
+import pandas as pd
 
-class ProcessorRegistry:
+T = TypeVar('T')  # Generic type for input
+U = TypeVar('U')  # Generic type for output
+
+class Registry(Generic[T, U]):
     """
-    A registry for storing and retrieving data processing functions.
-    Each function must accept an xarray.Dataset and a dictionary of parameters (processors),
-    and return a postprocessed xarray.Dataset.
+    A generic registry for storing and retrieving processing functions.
+    
+    This registry can be used for different types of data processing functions,
+    such as post-processors (xarray.Dataset -> xarray.Dataset) or 
+    filters (pd.DataFrame -> pd.DataFrame).
+    
+    Args:
+        T: Input type for registered functions
+        U: Output type for registered functions
     """
 
     # Class attributes
-    Processor: Callable[[xarray.Dataset, Dict[str, Any]], xarray.Dataset] # Processor type to enforce function type
-    _instance = None                                                      # Private class variable to store the singleton instance
+    _instances = {}  # Dictionary to store instances by registry_name
 
-    def __new__(cls): 
+    def __new__(cls, registry_name: str):
         """
-        Override the __new__ method to control the creation of a new instance.
-        Ensures that only one instance of ProcessorRegistry is created.
+        Override the __new__ method to control the creation of instances.
+        Ensures that only one instance of Registry is created per name.
+        
+        Args:
+            registry_name: A unique name for this registry instance
         """
-        if not cls._instance:            
-            # Create Singleton instance and instantiate directory (ONLY ONCE)
-            cls._instance = super(ProcessorRegistry, cls).__new__(cls)
-            cls._instance._registry: Dict[str, ProcessorRegistry.Processor] = {}
-        return cls._instance
+        if registry_name not in cls._instances:            
+            # Create instance and instantiate directory
+            instance = super(Registry, cls).__new__(cls)
+            instance._registry = {}
+            instance._registry_name = registry_name
+            cls._instances[registry_name] = instance
+        return cls._instances[registry_name]
 
-    def register(self, name: str, func: "ProcessorRegistry.Processor") -> "ProcessorRegistry.Processor": 
+    def register(self, name: str, func: Callable[[T, Dict[str, Any]], U]) -> Callable[[T, Dict[str, Any]], U]:
         """
-        Register a function as a processor.
+        Register a function in the registry.
 
         Parameters:
-            name (str): The name under which to register the processor.
-            func (Processor): The processor function to register.
+            name (str): The name under which to register the function.
+            func (Callable): The function to register.
 
         Returns:
-            Processor: The registered processor function.
+            Callable: The registered function.
         """
         self._registry[name] = func
         return func
 
-    def get(self, name: str, default: Any = None) -> "ProcessorRegistry.Processor":
+    def get(self, name: str, default: Any = None) -> Callable[[T, Dict[str, Any]], U]:
         """
         Retrieves a registered function by its name with an option to return a default value if
-        the function name is not found. This method does not raise a KeyError.
+        the function name is not found.
 
         Args:
             name (str): The name of the function to retrieve from the registry.
             default (Any, optional): The default value to return if the function name is not found.
 
         Returns:
-            ProcessorRegistry.Processor: The function registered under the specified name, or
-                                         the default value if the function is not found.
-
-        Examples:
-            function = registry.get('my_function', default=lambda x: x)
-            This line retrieves 'my_function' if it exists, otherwise returns a lambda function
-            that returns its input.
+            Callable: The function registered under the specified name, or the default value.
         """
         return self._registry.get(name, default)
 
-    def __call__(self, func: Callable) -> "ProcessorRegistry.Processor":
+    def __call__(self, func: Callable) -> Callable[[T, Dict[str, Any]], U]:
         """
-        Allows the class instance to be used as a decorator. This method is called
-        when the decorator is applied to a function. Function wraps the function and then
-        registers it.
+        Allows the class instance to be used as a decorator.
         
-        The decorator modifies the function's name by removing a predefined prefix "processor_"
-        before registering, which is useful for namespace management or simplifying
-        function identifiers in the registry.
-
         Args:
-            func (ProcessorRegistry.Processor): The function to decorate, which will be
-                                                registered in the registry with its name
-                                                possibly modified.
+            func (Callable): The function to decorate, which will be registered in the registry.
 
         Returns:
-            ProcessorRegistry.Processor: The wrapped function, which is now registered in
-                                         the registry under its potentially modified name.
-        
-        Examples:
-            @processor
-            def processor_function(x):
-                return x * 2
-
-            This usage decorates 'processor_function', removes "processor_" from its
-            name, and registers it in the registry with binding "function": processor_function().
+            Callable: The wrapped function, which is now registered in the registry.
         """
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -93,35 +84,27 @@ class ProcessorRegistry:
         
         # register and return function
         return self.register(
-            func.__name__.replace('processor_', ''),
+            func.__name__,
             wrapper
         )
 
-    def __getitem__(self, name: str) -> "ProcessorRegistry.Processor":
+    def __getitem__(self, name: str) -> Callable[[T, Dict[str, Any]], U]:
         """
         Enables direct access to registered functions using dictionary-like subscript notation.
-        This method retrieves a function by its name, throwing a KeyError if the function does not exist.
-
+        
         Args:
             name (str): The name of the function to retrieve from the registry.
 
         Returns:
-            ProcessorRegistry.Processor: The function registered under the specified name.
+            Callable: The function registered under the specified name.
 
         Raises:
-            KeyError: If no function is registered under the specified name, a KeyError is raised.
-
-        Examples:
-            function = registry['my_function']
-            This line retrieves 'my_function' from the registry if it exists.
-
+            KeyError: If no function is registered under the specified name.
         """
-
         if name in self._registry:
             return self._registry[name]
         # if function doesn't exist raise error
-        raise KeyError(f"No function registered under the name {name}")
+        raise KeyError(f"No function registered under the name {name} in registry {self._registry_name}")
 
-
-# Create instance of ProcessorRegistry for registering functions 
-post_processor = ProcessorRegistry()
+# Create instances for different types of processors
+post_processor = Registry[xarray.Dataset, xarray.Dataset]("post_processor")

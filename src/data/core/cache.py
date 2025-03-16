@@ -205,12 +205,15 @@ class CacheManager:
         except Exception as error:
             raise RuntimeError(f"{relative_path}: Post-processing steps failed for dataset. Error: {error}") from error
         
+        print(f"{relative_path}: Post-processing finished.")
+        
         # Cache the L2 dataset.
-        try:
-            self.cache(final_dataset, relative_path, normalized_l2_params)
-        except Exception as error:
-            # Log the caching error without preventing the return of the final dataset.
-            print(f"{relative_path}: Warning - Failed to cache L2 dataset. Error: {error}")
+        if L1Key != L2Key:
+            try:
+                self.cache(final_dataset, relative_path, normalized_l2_params)
+            except Exception as error:
+                # Log the caching error without preventing the return of the final dataset.
+                print(f"{relative_path}: Warning - Failed to cache L2 dataset. Error: {error}")
         
         return final_dataset
 

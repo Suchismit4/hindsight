@@ -2,17 +2,19 @@
 
 
 import numpy as np
-import pandas as pd
 import xarray as xr
-import xarray_jax as xj
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any
-from datetime import datetime
-from dataclasses import dataclass
 import equinox as eqx
+import functools
 
+
+from src.data.core.operations import TimeSeriesOps
 from .util import Rolling
+import warnings
+
+warnings.simplefilter("ignore", xr.core.extensions.AccessorRegistrationWarning)
 
 class DateTimeAccessorBase:
     """
@@ -88,6 +90,88 @@ class DateTimeAccessorBase:
         mask = jnp.array(self._obj.coords['mask'].values)  # Shape: (T,)
         indices = jnp.array(self._obj.coords['mask_indices'].values)  # Shape: (T,)
         return Rolling(self._obj, dim, window, mask, indices)
+
+    def shift(self, periods: int = 1) -> Union[xr.Dataset, xr.DataArray]:
+        """
+        Shift the data by a specified number of business days, skipping weekends and holidays.
+        
+        Parameters:
+            periods (int): Number of periods to shift. Positive values shift forward in time,
+                        negative values shift backward.
+        
+        Returns:
+            Union[xr.Dataset, xr.DataArray]: A new xarray object with shifted data.
+        """
+        obj = self._obj
+        
+        # Handle Dataset case by applying shift to each DataArray
+        if isinstance(obj, xr.Dataset):
+            # Extract mask and mask_indices from the dataset
+            mask_indices = obj.coords.get('mask_indices', None)
+            
+            if mask_indices is None:
+                # Can't perform business day shifting without mask and mask_indices
+                return obj.copy()
+            
+            # Shift each data variable
+            shifted_vars = {}
+            for var_name, da in obj.data_vars.items():
+                if np.issubdtype(da.dtype, np.number):
+                    if 'year' not in da.coords:
+                        shifted_vars[var_name] = da
+                    else:
+                        # Stack time dimensions for efficient processing
+                        stacked_da = da.stack(time_index=("year", "month", "day"))
+                        stacked_da = stacked_da.transpose("time_index", ...)
+                        
+                        # Convert to JAX arrays for efficient computation
+                        indices_array = jnp.array(mask_indices.values)
+                        # Replace -1 with 0 for valid indexing, but maintain mask for filtering
+                        indices_array = jnp.where(indices_array == -1, 0, indices_array).astype(jnp.int32)
+                        data = jnp.asarray(stacked_da.values)
+                        
+                        # Apply the shift operation
+                        shifted_data = TimeSeriesOps.shift(data, indices_array, periods)
+                        
+                        # Reconstruct the DataArray and unstack
+                        shifted_da = stacked_da.copy(data=shifted_data)
+                        shifted_vars[var_name] = shifted_da.unstack("time_index")
+                else:
+                    # Non-numeric data doesn't get shifted
+                    shifted_vars[var_name] = da
+            
+            # Create a new dataset with the shifted variables and original coordinates
+            return xr.Dataset(shifted_vars, coords=obj.coords, attrs=obj.attrs)
+        
+        # For DataArrays
+        # Extract mask and mask_indices from the dataset
+        mask_indices = obj.coords.get('mask_indices', None)
+            
+        if mask_indices is None:
+            raise ValueError("No mask found and tried to shift a DataArray.")
+        
+        # If the DataArray is not numeric, simply return it.
+        if not np.issubdtype(self.obj.dtype, np.number):
+            return self.obj
+        
+        stacked_obj = self.obj.stack(time_index=("year", "month", "day"))
+        stacked_obj = stacked_obj.transpose("time_index", ...)
+        
+        # Convert to JAX arrays for efficient computation
+        indices_array = jnp.array(mask_indices.values)
+        # Replace -1 with 0 for valid indexing, but maintain mask for filtering
+        indices_array = jnp.where(indices_array == -1, 0, indices_array).astype(jnp.int32)
+        data = jnp.asarray(stacked_obj.values)
+        
+        # Apply the shift operation
+        shifted_data = TimeSeriesOps.shift(data, indices_array, periods)
+                    
+        # Reconstruct the DataArray and unstack
+        shifted_da = stacked_obj.copy(data=shifted_data)
+        unstacked_da = shifted_da.unstack("time_index")
+        
+        # For other cases (no time dimension or periods=0), return a copy
+        return unstacked_da
 
 # Register accessors for xarray objects
 @xr.register_dataset_accessor('dt')

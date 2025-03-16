@@ -35,29 +35,25 @@ def main():
             "end_date":   "2024-01-01",
             "freq": "D",
             "filters": {
-                "date": [">=", "2015-01-01"]
+                "date__gte": "2015-01-01"
             },
-            "postprocessors": [
-                {
-                    "proc": "replace",
-                    "options": {
-                        "src": "delistings",
-                        "rename": [["dlstdt", "time"]],
-                        "identifier": "permno",
-                        "from": "dlret",
-                        "to": "ret",
-                    }
+            "processors": {
+                # Replacing delisting returns with actual returns
+                "replace_values": {
+                    "source": "delistings",
+                    "rename": [["dlstdt", "time"]],
+                    "identifier": "permno",
+                    "from_var": "dlret",
+                    "to_var": "ret"
                 },
-                {
-                    "proc": "merge_2d_table",
-                    "options": {
-                        "src": "msenames",
-                        "identifier": "permno",
-                        "ax2": "comnam",
-                        "ax1": "asset",
-                    }
+                # Merging company names from MSENAMES table
+                "merge_table": {
+                    "source": "msenames",
+                    "identifier": "permno",
+                    "column": "comnam",
+                    "axis": "asset"
                 }
-            ]
+            }
         }
     }])
 

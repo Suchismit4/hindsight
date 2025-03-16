@@ -3,14 +3,11 @@
 import os
 import numpy as np
 import xarray as xr
-import xarray_jax as xj
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any, Callable
-import functools
 from enum import Enum
 import pandas as pd
-import jax
 import pyreadstat
 
 # Import the core operations

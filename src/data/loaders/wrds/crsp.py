@@ -31,7 +31,7 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
         Adjust LOCAL_SRC depending on the requested frequency, call the generic loader,
         and then attach company names from the separate msenames table as a new DataArray.
         """
-        user_freq_str = str(config.get('frequency', 'D')).upper()
+        user_freq_str = str(config.get('freq', 'D')).upper()
         
         # Find the correct file and frequency; default to daily if not found.
         filename, freq_enum = self.CRSP_FREQUENCY_MAP.get(
@@ -42,7 +42,7 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
         # Construct the path for CRSP a_stock
         self.LOCAL_SRC = f"/wrds/crsp/sasdata/a_stock/{filename}"
         self.FREQUENCY = freq_enum
-
+        
         # Load the main dataset via the generic loader.
         ds = super().load_data(**config)
         
@@ -56,13 +56,12 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
          - Merging of msenames is removed to avoid duplicating company names.
          - Merges msedist (distributions) and msedelist (delisting information) remain.
         """
-        
                     
         df = super()._preprocess_df(
             df,
             date_col='date',
             identifier_col='permno',
-            filters=config.get('filters', {})
+            filters_config=config.get('filters_config', {})
         )
 
         # Convert 'permco' to int if present.

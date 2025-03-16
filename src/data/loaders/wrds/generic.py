@@ -12,10 +12,45 @@ import os
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 import xarray as xr
-import pyreadstat
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 
 from src.data.loaders.abstracts.base import BaseDataSource
 from src.data.core.util import FrequencyType
+from src.data.processors import ProcessorsList, ProcessorsDictConfig
+
+def multiprocess_read(src: str, num_processes: int, columns_to_read: Optional[List[str]]) -> pd.DataFrame:
+    """
+    Read a SAS file using multiprocessing for better performance.
+    
+    Args:
+        src: Path to the SAS file
+        num_processes: Number of processes for parallel reading
+        columns_to_read: Optional list of columns to include
+        
+    Returns:
+        DataFrame containing the data from the SAS file
+        
+    Raises:
+        FileNotFoundError: If the source file doesn't exist
+        RuntimeError: If there's an error reading the SAS file
+    """
+    import pyreadstat  # local import to ensure clean process state
+    read_kwargs = {"num_processes": num_processes}
+    if columns_to_read:
+        read_kwargs["usecols"] = columns_to_read
+    
+    try:
+        df, meta = pyreadstat.read_file_multiprocessing(
+            pyreadstat.read_sas7bdat,
+            src,
+            **read_kwargs
+        )
+        return df
+    except FileNotFoundError:
+        raise FileNotFoundError(f"SAS file not found: {src}")
+    except Exception as e:
+        raise RuntimeError(f"Error reading SAS file: {str(e)}")
 
 class GenericWRDSDataLoader(BaseDataSource):
     """
@@ -25,6 +60,9 @@ class GenericWRDSDataLoader(BaseDataSource):
 
     # Default frequency; can be overridden in subclasses if needed
     FREQUENCY: FrequencyType = FrequencyType.DAILY
+    
+    # Subclasses must define the LOCAL_SRC attribute
+    LOCAL_SRC: str = ""
 
     def load_data(self, **config) -> xr.Dataset:
         """
@@ -37,31 +75,76 @@ class GenericWRDSDataLoader(BaseDataSource):
           - columns_to_read: list of columns for the primary table
           - date_col: name of the SAS date column (e.g. "datadate")
           - identifier_col: name of the entity column (e.g. "gvkey")
-          - filters: simple filters to apply after load
-          - postprocessors: a list of atomic operations to apply (see module docstring)
+          - filters: Django-style filter dictionary (e.g., {"column__gte": value})
+          - filters_config: explicit filter configuration list (for advanced cases)
+          
+        Post-processor options (one of the following):
+          - postprocessors: traditional format post-processors (list of dicts)
+          - processors: Django-style post-processors (dictionary) - recommended
+            
+        Example of Django-style processors:
+        ```python
+        processors = {
+            "set_permno_coord": True,
+            "set_permco_coord": True,
+            "fix_market_equity": True,
+            "merge_table": [
+                {
+                    "source": "msenames",
+                    "axis": "asset",
+                    "column": "comnam"
+                },
+                {
+                    "source": "msenames",
+                    "axis": "asset",
+                    "column": "exchcd"
+                }
+            ]
+        }
+        ```
 
         Returns:
             xr.Dataset: The assembled dataset.
+            
+        Raises:
+            ValueError: If LOCAL_SRC is not defined in the subclass
         """
+        if not self.LOCAL_SRC:
+            raise ValueError("LOCAL_SRC must be defined in subclass")
+            
+        # Parse frequency
         user_freq_str = config.get("frequency", None)
         freq_enum = (
             self._parse_frequency(user_freq_str) if user_freq_str else self.FREQUENCY
         )
 
-        # Load and process the primary table.
+        # Load and process the primary table
         df = self._load_local(**config)
         df = self._preprocess_df(df, **config)
-        
+    
+        # Identify data columns vs. metadata columns
         non_data_cols = ["date", "identifier"]
         data_cols = [col for col in df.columns if col not in non_data_cols]
         
-        # Finally convert it to a xr.Dataset
+        # Convert to xarray Dataset
         ds = self._convert_to_xarray(df, data_cols, frequency=freq_enum)
                 
+        # Apply post-processors if specified - check both formats
+        # Give precedence to traditional format if both are provided
+        postprocessors = config.get("postprocessors")
+        processors = config.get("processors") 
+        
+        if postprocessors:
+            ds = self._apply_postprocessors(ds, postprocessors)
+        elif processors:
+            ds = self._apply_postprocessors(ds, processors)
+
         # Ensure the dataset is sliced by the requested date range.
-        # ds = self.subset_by_date(ds, config) This will throw an error due to ineffecient implementation of a large slice
+        # Not done here due to performance issues with large datasets
+        # ds = self.subset_by_date(ds, config)
 
         return ds
+
 
     def _load_local(
         self, 
@@ -73,26 +156,25 @@ class GenericWRDSDataLoader(BaseDataSource):
         Loads data from LOCAL_SRC using pyreadstat with optional multiprocessing.
 
         Args:
-            num_processes (int): Number of processes for pyreadstat.
-            columns_to_read (List[str]): Subset of columns to read.
+            num_processes: Number of processes for pyreadstat.
+            columns_to_read: Subset of columns to read.
             **config: Additional keyword arguments.
 
         Returns:
             pd.DataFrame: The raw loaded data.
+            
+        Raises:
+            ValueError: If LOCAL_SRC is not defined
         """
-        read_kwargs = {
-            "num_processes": num_processes,
-        }
-        if columns_to_read:
-            read_kwargs["usecols"] = columns_to_read
+        if not self.LOCAL_SRC:
+            raise ValueError("LOCAL_SRC must be defined in subclass")
 
-        # Load using pyreadstat's multiprocessing read for .sas7bdat
-        df, meta = pyreadstat.read_file_multiprocessing(
-            pyreadstat.read_sas7bdat,
-            self.LOCAL_SRC,
-            **read_kwargs
-        )
-
+        # Create a spawn-context to ensure a clean process without JAX/xarray state
+        ctx = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
+            future = executor.submit(multiprocess_read, self.LOCAL_SRC, num_processes, columns_to_read)
+            df = future.result()
+        
         return df
 
     def _preprocess_df(
@@ -101,6 +183,8 @@ class GenericWRDSDataLoader(BaseDataSource):
         date_col: Optional[str] = None,
         identifier_col: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
+        filters_config: Optional[List[Dict[str, Any]]] = None,
+        **config
     ) -> pd.DataFrame:
         """
         A 'generic' preprocessing step that child classes can call or override.
@@ -109,14 +193,19 @@ class GenericWRDSDataLoader(BaseDataSource):
         rename identifier column, apply filters, and sort.
 
         Args:
-            df (pd.DataFrame): The initial, raw DataFrame.
-            date_col (str): Name of the SAS date column (e.g., 'date', 'datadate').
-            identifier_col (str): Name of the entity column (e.g., 'permno', 'gvkey').
-            filters (Dict[str, Any]): Simple equality filters to apply after loading.
+            df: The initial, raw DataFrame.
+            date_col: Name of the SAS date column (e.g., 'date', 'datadate').
+            identifier_col: Name of the entity column (e.g., 'permno', 'gvkey').
+            filters: Django-style filters (e.g., {"column__gte": value})
+            filters_config: Explicit filter configurations (for advanced cases)
+            **config: Additional keyword arguments.
 
         Returns:
             pd.DataFrame: The cleaned/preprocessed DataFrame.
-        """
+        """            
+        if df.empty:
+            return df
+            
         # Normalize column names
         df.columns = df.columns.str.lower()
         df.reset_index(inplace=True, drop=True)
@@ -124,14 +213,16 @@ class GenericWRDSDataLoader(BaseDataSource):
         # Date handling
         if date_col and (date_col_lower := date_col.lower()) in df.columns:
             df['date'] = self.convert_sas_date(df[date_col_lower])
-
+            
         # Rename the identifier column
         if identifier_col and (id_col_lower := identifier_col.lower()) in df.columns:
             df = df.rename(columns={id_col_lower: 'identifier'})
 
-        # Apply user-defined filters (equalities)
-        if filters:
-            df = self._apply_filters(df, filters)
+        # Apply filters - give precedence to filters_config if both are provided
+        if filters_config:
+            df = self.apply_filters(df, filters_config)
+        elif filters:
+            df = self.apply_filters(df, filters)
 
         # Sort by date and identifier if they exist
         possible_sort_cols = [c for c in ['date', 'identifier'] if c in df.columns]
@@ -146,23 +237,29 @@ class GenericWRDSDataLoader(BaseDataSource):
         Convert a numeric SAS date column to a proper Pandas datetime.
 
         Args:
-            sas_date_col (pd.Series): Column of SAS date ints.
-            epoch (str): Base epoch for SAS (default '1960-01-01').
+            sas_date_col: Column of SAS date ints.
+            epoch: Base epoch for SAS (default '1960-01-01').
 
         Returns:
             pd.Series: Date column in datetime format.
+            
+        Raises:
+            ValueError: If the date conversion fails
         """
         sas_epoch = pd.to_datetime(epoch)
-        return sas_epoch + pd.to_timedelta(sas_date_col.astype(int), unit='D')
+        try:
+            return sas_epoch + pd.to_timedelta(sas_date_col.astype(int), unit='D')
+        except (ValueError, TypeError):
+            raise ValueError(f"Failed to convert SAS dates to datetime. Ensure the column contains valid numeric values.")
     
     @staticmethod
-    def _parse_frequency(freq_str: str) -> FrequencyType:
+    def _parse_frequency(freq_str: Optional[str]) -> FrequencyType:
         """
         Convert a frequency string (e.g. 'D', 'W', 'M', 'Y') to a FrequencyType enum.
         Defaults to DAILY if freq_str is unrecognized.
 
         Args:
-            freq_str (str): One of "D", "W", "M", "Y", etc.
+            freq_str: One of "D", "W", "M", "Y", etc.
 
         Returns:
             FrequencyType: The corresponding enum value.
@@ -175,4 +272,4 @@ class GenericWRDSDataLoader(BaseDataSource):
             'Y': FrequencyType.YEARLY,
             'A': FrequencyType.ANNNUAL,
         }
-        return freq_map.get(freq_str.upper(), FrequencyType.DAILY)
+        return freq_map.get(freq_str.upper() if freq_str else '', FrequencyType.DAILY)

@@ -32,7 +32,6 @@ class DataManager:
         for provider in _PROVIDER_REGISTRY.values():
             self._data_loaders.update(provider.data_loaders)
 
-
     def get_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> xr.DataTree:
         """
         Retrieve data for the specified data paths with their configurations.

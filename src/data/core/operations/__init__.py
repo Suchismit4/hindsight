@@ -13,6 +13,59 @@ class TimeSeriesOps(eqx.Module):
     Core operations for multi-dimensional panel data processing.
     Handles arrays with Time x Assets x Characteristics structure.
     """
+        
+    @staticmethod
+    @eqx.filter_jit
+    def shift(
+        data: jnp.ndarray, 
+        indices: jnp.ndarray,
+        periods: int
+    ) -> jnp.ndarray:
+        """
+        Shift data along the time dimension respecting business days.
+        
+        Args:
+            data: Input data with shape (T, ...)
+            indices: Indices mapping mask -> valid business days with shape (T,)
+            periods: Number of periods to shift (positive = forward, negative = backward)
+            
+        Returns:
+            Shifted data with the same shape as input data
+        """
+        # Create result array filled with NaNs
+        result = jnp.full_like(data, jnp.nan)
+        
+        # Return early if no shift is requested
+        if periods == 0:
+            return data.copy()
+        
+        # Find positions of valid business days
+        valid_positions = indices
+        
+        # Return early if no valid positions or if shift is too large
+        n_valid = len(valid_positions)
+        if n_valid == 0 or abs(periods) >= n_valid:
+            return result
+        
+        # Compute source and target indices for the shift
+        if periods > 0:
+            # For positive shift: take data[:-periods] and put it at positions[periods:]
+            src_indices = jnp.arange(n_valid - periods)
+            tgt_indices = jnp.arange(periods, n_valid)
+        else:  # periods < 0
+            # For negative shift: take data[-periods:] and put it at positions[:periods]
+            src_indices = jnp.arange(-periods, n_valid)
+            tgt_indices = jnp.arange(n_valid + periods)
+        
+        # Calculate actual positions to copy from/to
+        src_positions = valid_positions[src_indices]
+        tgt_positions = valid_positions[tgt_indices]
+        
+        # Get the data to be shifted
+        src_data = jnp.take(data, src_positions, axis=0)
+        
+        # Copy data from source to target positions in one operation
+        return result.at[tgt_positions].set(src_data)
     
     @staticmethod
     @eqx.filter_jit

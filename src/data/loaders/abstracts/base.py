@@ -13,6 +13,8 @@ from src.data.core.util import FrequencyType
 from src.data.core.util import Loader as load
 from src.data.processors.registry import post_processor
 from src.data.core.cache import CacheManager
+from src.data.filters.filters import apply_filters, parse_django_style_filters
+from src.data.processors import apply_processors, ProcessorsList, ProcessorsDictConfig
 
 class BaseDataSource(ABC):
     """
@@ -27,69 +29,79 @@ class BaseDataSource(ABC):
         """Initialize the data source with the given data path."""
         self.data_path = data_path  # This is used in cache path generation
             
-    def _apply_filters(self, df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
+    def apply_filters(self, df: pd.DataFrame, filters_config: Union[List[Dict[str, Any]], Dict[str, Any], None]) -> pd.DataFrame:
         """
         Apply filters to the DataFrame.
-
+        
+        Supports both explicit filter configurations and Django-style filter dictionaries.
+        
         Args:
             df: The DataFrame to filter.
-            filters: A dictionary where keys are column names and values are filter conditions.
-
+            filters_config: Either:
+                - List of filter configurations (explicit format)
+                - Dictionary of Django-style filters (e.g., {"column__gte": value})
+                - None (no filtering will be performed)
+            
         Returns:
             pd.DataFrame: The filtered DataFrame.
         """
+        if filters_config is None:
+            return df
+            
+        if isinstance(filters_config, dict):
+            # Convert Django-style filters to explicit format
+            filters_list = parse_django_style_filters(filters_config)
+        else:
+            # Already in explicit format
+            filters_list = filters_config
+            
+        return apply_filters(df, filters_list)
 
-        # Explicitly make sure filters are of proper type
-        for k, v in filters.items():
-            if isinstance(v, list) and len(v) == 2:
-                filters[k] = tuple(v)
-
-        for column, condition in filters.items():
-            if isinstance(condition, tuple) or isinstance(condition, list) \
-                    and len(condition) == 2:
-                # Condition is a tuple like ('>=', '1959-01-01')
-                operator, value = condition
-                if operator == '=' or operator == '==':
-                    df = df[df[column] == value]
-                elif operator == '!=':
-                    df = df[df[column] != value]
-                elif operator == '>':
-                    df = df[df[column] > value]
-                elif operator == '>=':
-                    df = df[df[column] >= value]
-                elif operator == '<':
-                    df = df[df[column] < value]
-                elif operator == '<=':
-                    df = df[df[column] <= value]
-                else:
-                    raise ValueError(f"Unsupported operator '{operator}' in filter for column '{column}'.")
-            else:
-                # Condition is a simple equality
-                df = df[df[column] == condition]
-        return df
-
-    def _apply_postprocessors(self, ds: xr.Dataset, postprocessors: List[str]) -> xr.Dataset:
+    def _apply_postprocessors(self, ds: xr.Dataset, postprocessors: Union[ProcessorsList, ProcessorsDictConfig]) -> xr.Dataset:
         """
-        Apply registered postprocessors to an xarray.Dataset sequentially as given.
+        Apply registered postprocessors to an xarray.Dataset.
+        
+        Supports both explicit post-processor configurations and Django-style dictionary format.
 
         Args:
-            ds (xr.Dataset): The dataset to be processed.
-            postprocessors (List[str]): A list of names identifying the postprocessors to apply.
+            ds: The dataset to be processed.
+            postprocessors: Either:
+                - List of post-processor configurations (traditional format)
+                - Dictionary of Django-style post-processors (e.g., {"set_permno_coord": True})
 
         Returns:
-            xr.Dataset: The postprocessed dataset.
+            The postprocessed dataset.
+            
+        Raises:
+            ValueError: If a processor configuration is invalid or a processor is not found
         """
-        for processor_name in postprocessors:
-            processor_func = post_processor.get(processor_name)
-            if processor_func is None:
-                raise ValueError(f"Postprocessor '{processor_name}' is not registered.")
-            ds = processor_func(ds)
-        return ds
+        if not postprocessors:
+            return ds
+        
+        # Use the shared apply_processors function from the processors module
+        return apply_processors(ds, postprocessors)
    
-    def _convert_to_xarray(self, df: pd.DataFrame, columns, frequency: FrequencyType = FrequencyType.DAILY) -> xr.Dataset:
+    def _convert_to_xarray(self, df: pd.DataFrame, columns: List[str], frequency: FrequencyType = FrequencyType.DAILY) -> xr.Dataset:
         """
         Convert pandas DataFrame to xarray Dataset.
+        
+        Args:
+            df: DataFrame to convert
+            columns: Feature columns to include in the Dataset
+            frequency: Time frequency for the Dataset
+            
+        Returns:
+            xarray Dataset with proper dimensions and coordinates
+            
+        Raises:
+            ValueError: If 'date' or 'identifier' columns are missing
         """
+        # Validate required columns
+        if 'date' not in df.columns:
+            raise ValueError("DataFrame must have a 'date' column")
+        if 'identifier' not in df.columns:
+            raise ValueError("DataFrame must have an 'identifier' column")
+            
         # Ensure 'date' is datetime
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
@@ -105,6 +117,16 @@ class BaseDataSource(ABC):
     def subset_by_date(self, ds: xr.Dataset, config: Dict[str, Any]) -> xr.Dataset:
         """
         Validate that both start_date and end_date are provided, and subset the dataset's time dimension.
+        
+        Args:
+            ds: Dataset to subset
+            config: Configuration dictionary with start_date and end_date
+            
+        Returns:
+            Subset of the dataset with time dimension filtered
+            
+        Raises:
+            ValueError: If start_date or end_date is missing
         """
         if not config.get("start_date") or not config.get("end_date"):
             raise ValueError("Both 'start_date' and 'end_date' must be provided in the config.")
@@ -112,5 +134,13 @@ class BaseDataSource(ABC):
 
     @abstractmethod
     def load_data(self, **kwargs) -> Union[xr.Dataset, xr.DataTree]:
-        """Abstract method to load data."""
+        """
+        Abstract method to load data. Must be implemented by subclasses.
+        
+        Args:
+            **kwargs: Configuration parameters for loading data
+            
+        Returns:
+            Either an xarray Dataset or DataTree containing the loaded data
+        """
         pass

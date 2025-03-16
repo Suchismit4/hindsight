@@ -6,6 +6,8 @@ from src.data.core.util import FrequencyType
 from typing import Dict, Any, List
 from .generic import GenericWRDSDataLoader
 import pyreadstat
+from dateutil.relativedelta import *
+from pandas.tseries.offsets import *
 
 class CompustatDataFetcher(GenericWRDSDataLoader):
     """
@@ -43,42 +45,66 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
     def _preprocess_df(self, df: pd.DataFrame, **config) -> pd.DataFrame:
         """
         Compustat-specific preprocessing:
-         - date_col='datadate' -> 'date'
-         - identifier_col='gvkey' -> 'identifier'
+        - date_col='datadate' -> 'date'
+        - identifier_col='gvkey' -> 'identifier'
+        - Adds CCM linkage information for later CRSP linking
         """
+        
+        df['gvkey'] = df['gvkey'].astype(str)
         df = super()._preprocess_df(
             df,
             date_col='datadate',
             identifier_col='gvkey',
-            **config
+            filters_config=config.get('filters_config', {})
         )
         
-        # Load additional Compustat table (e.g., filenamesq for company static info)
-        filenamesq_path = "/wrds/comp/sasdata/d_na/filenamesq.sas7bdat"
-        extra_df, _ = pyreadstat.read_file_multiprocessing(
+        # Load CCM link table with basic filtering of invalid links
+        ccm_path = "/wrds/crsp/sasdata/a_ccm/ccmxpf_linktable.sas7bdat"
+        ccm, _ = pyreadstat.read_file_multiprocessing(
             pyreadstat.read_sas7bdat,
-            filenamesq_path,
+            ccm_path,
             num_processes=config.get('num_processes', 16)
         )
-        extra_df.columns = extra_df.columns.str.lower()
-        print(extra_df.columns)
-        quit(1)
-        extra_df.rename(columns={'gvkey': 'identifier', 'conm': 'company_name'}, inplace=True)
-
-        # Merge company names onto main dataframe
-        df = df.merge(extra_df[['identifier', 'company_name']], on='identifier', how='left')
         
-        # CompuStat has duplicate multiple entries on some timeframes.
-        # We keep only the last one and forward dates to date end.
-        # Ensure 'date' is a datetime object for proper comparison
+        # Format column names and filter by standard link type/primacy criteria
+        ccm.columns = ccm.columns.str.lower()
+        ccm = ccm[
+            (ccm['linktype'].str.startswith('L')) & 
+            ((ccm['linkprim'] == 'C') | (ccm['linkprim'] == 'P'))
+        ]
+        
+        # Ensure date columns are properly converted to datetime format
+        ccm['linkdt'] = pd.to_datetime(ccm['linkdt'])
+        ccm['linkenddt'] = pd.to_datetime(ccm['linkenddt'])
+        
+        # Handle missing link end dates - ensure it's datetime type
+        ccm['linkenddt'] = ccm['linkenddt'].fillna(pd.to_datetime('today'))
+        
+        # Ensure 'date' is a datetime object for proper handling
         df['date'] = pd.to_datetime(df['date'])
-            
-        # Sort by 'date' and drop duplicates while keeping the last occurrence
-        df = df.sort_values('date', ascending=False).drop_duplicates(subset='identifier', keep='last')
-            
+        
+        # Create date fields matching Fama-French methodology
+        df['yearend'] = df['date']    + pd.offsets.YearEnd(0)
+        df['jdate']   = df['yearend'] + pd.offsets.MonthEnd(6)
+        
+        # Preserve the original CRSP permno name for clarity
+        ccm = ccm.rename(columns={'lpermno': 'permno'})
+        
+        # Merge CCM data with Compustat
+        df = pd.merge(df, ccm, left_on='identifier', right_on='gvkey', how='left')
+                
+        # Prune the valid links we can do bw comp and CCM.
+        valid_links = (
+            (df['jdate'] >= df['linkdt']) & 
+            (df['jdate'] <= df['linkenddt'])
+        )
+        df = df[valid_links]
+        
         # Set the date to the last day of the year
         df['date'] = df['date'].apply(lambda x: x.replace(month=12, day=31))
         
-        
+        # Drop redundant gvkey column since we already have 'identifier'
+        if 'gvkey' in df.columns:
+            df = df.drop('gvkey', axis=1)
             
         return df
