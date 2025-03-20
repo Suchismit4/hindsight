@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Union, Optional, TypeVar, Callable, Sequence
 
 import xarray as xr
 import pandas as pd
+from src.data.core.util import Loader
 from src.data.processors.registry import Registry, post_processor
 
 # Import all processors
@@ -41,7 +42,9 @@ PROCESSOR_SHORTCUTS = {
         "options_mapping": {
             "source": "external_ds",
             "from_var": "from",
-            "to_var": "to"
+            "to_var": "to",
+            "identifier": "identifier",
+            "rename": "rename"
         }
     },
     "merge_table": {
@@ -50,7 +53,7 @@ PROCESSOR_SHORTCUTS = {
             "source": "external_ds",
             "axis": "ax1",
             "column": "ax2",
-            "identifier": "identifier"  # Pass through this common option
+            "identifier": "identifier"
         }
     },
     "set_permno_coord": {
@@ -206,7 +209,7 @@ def parse_processors_config(processors_dict: ProcessorsDictConfig) -> Processors
     
     return processors_list
 
-def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, ProcessorsDictConfig]) -> xr.Dataset:
+def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, ProcessorsDictConfig]) -> Union[xr.Dataset, List]:
     """
     Apply a series of post-processors to an xarray Dataset.
     
@@ -240,10 +243,11 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
         >>> processed_ds = apply_processors(ds, processors_dict)
     """
     if not processors:
-        return ds
+        return ds, []
         
     # Make a defensive copy to avoid modifying the original dataset
     result = ds.copy()
+    applied_postprocessors = []
     
     # Parse Django-style processors if needed
     if isinstance(processors, dict):
@@ -257,11 +261,29 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
         
         if not proc_name:
             raise ValueError("Processor configuration must include 'proc' key")
+        
+        # If an external source is specified, load the external dataset.
+        if "source" in options and isinstance(options["source"], str):
+            external_identifier = options.get("identifier")
+            if not external_identifier:
+                raise ValueError("Postprocessor requires an 'identifier' for external source.")
+            external_rename = options.get("rename")
+            options["external_ds"] = Loader.load_external_proc_file(
+                    options["source"],
+                    external_identifier,
+                    external_rename
+            )
             
         processor_func = post_processor.get(proc_name)
         if not processor_func:
             raise ValueError(f"Unknown processor: {proc_name}")
-            
+        
         result = processor_func(result, options)
         
-    return result
+        # Remove the external_ds from options to avoid caching issues.
+        if "external_ds" in options:
+            del options["external_ds"]
+        
+        applied_postprocessors.append(processor_config)
+        
+    return result, applied_postprocessors

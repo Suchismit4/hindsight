@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, Union, List, Optional, Tuple
 from src.data.processors.registry import post_processor
+from src.data.core.util import Loader
 
 
 @post_processor
@@ -26,7 +27,7 @@ def merge_2d_table(ds: xr.Dataset, params: Dict[str, Any]) -> xr.Dataset:
     Args:
         ds: The xarray Dataset to process
         params: Parameters with keys:
-            - external_ds: External DataFrame to merge from
+            - external_ds: External X-array dataset to merge
             - ax1: Primary axis dimension name (usually 'asset')
             - ax2: The column/variable name to merge
             - identifier: Optional column name in external_ds to use as key (defaults to 'identifier')
@@ -46,6 +47,13 @@ def merge_2d_table(ds: xr.Dataset, params: Dict[str, Any]) -> xr.Dataset:
     # Validate parameters
     if external_ds is None or ax1 is None or ax2 is None:
         raise ValueError("Required parameters missing for merge_2d_table: external_ds, ax1, ax2")
+    
+    # If external_ds is a string, load the dataset using Loader
+    if isinstance(external_ds, str):
+        try:
+            external_df = Loader.load_external_proc_file(external_ds, identifier_col)
+        except Exception as e:
+            raise ValueError(f"Error loading external dataset '{external_ds}': {str(e)}")
     
     # Validate external dataset has required columns
     if identifier_col not in external_ds.columns or ax2 not in external_ds.columns:
@@ -90,6 +98,7 @@ def replace(ds: xr.Dataset, params: Dict[str, Any]) -> xr.Dataset:
             - from: Source variable name to get values from
             - to: Target variable name to update
             - rename: Optional list of column name pairs to align dimensions
+            - identifier: Optional identifier column name for loading external dataset (defaults to 'permno')
             
     Returns:
         Updated xarray Dataset with replaced values
@@ -102,6 +111,7 @@ def replace(ds: xr.Dataset, params: Dict[str, Any]) -> xr.Dataset:
     replace_frm = params.get('from')
     replace_to = params.get('to')
     rename_pairs = params.get('rename', [])
+    identifier_col = params.get('identifier', 'permno')
     
     # Validate parameters
     if external_ds is None or replace_frm is None or replace_to is None:
@@ -114,11 +124,12 @@ def replace(ds: xr.Dataset, params: Dict[str, Any]) -> xr.Dataset:
     # Make a defensive copy
     result = ds.copy()
     
-    # Handle dimension renaming if specified
-    if rename_pairs and isinstance(external_ds, pd.DataFrame):
-        for old_name, new_name in rename_pairs:
-            if old_name in external_ds.columns:
-                external_ds = external_ds.rename(columns={old_name: new_name})
+    # If external_ds is a string, load the dataset using Loader
+    if isinstance(external_ds, str):
+        try:
+            external_ds = Loader.load_external_proc_file(external_ds, identifier_col, rename_pairs)
+        except Exception as e:
+            raise ValueError(f"Error loading external dataset '{external_ds}': {str(e)}")
     
     # Reindex the dataset to match the primary dataset
     external_ds = external_ds.reindex_like(ds, method=None)

@@ -19,6 +19,7 @@ from copy import deepcopy
 from src.data.core.util import FrequencyType, TimeSeriesIndex
 from src.data.processors.registry import post_processor
 from src.data.core.util import Loader
+from src.data.processors import apply_processors
 
 
 class CacheManager:
@@ -199,7 +200,7 @@ class CacheManager:
         
         # Apply post-processing to generate the L2 dataset.
         try:
-            final_dataset, applied_postprocessors = self._apply_postprocessors(dataset_to_process, postprocessors_config)
+            final_dataset, applied_postprocessors = apply_processors(dataset_to_process, postprocessors_config)
             # Update parameters with the applied postprocessors for accurate caching metadata.
             parameters['postprocessors'] = applied_postprocessors
         except Exception as error:
@@ -216,57 +217,6 @@ class CacheManager:
                 print(f"{relative_path}: Warning - Failed to cache L2 dataset. Error: {error}")
         
         return final_dataset
-
-
-    def _apply_postprocessors(self, dataset: xr.Dataset, postprocessors: List[Dict[str, Any]]
-                                ) -> Union[xr.Dataset, List[Dict[str, Any]]]:
-        """
-        Apply a sequence of post-processing operations to the dataset.
-        
-        For each postprocessor configuration:
-         - If an external source is specified (via 'src'), load it and include it in the options.
-         - Retrieve and execute the corresponding postprocessor function from the registry.
-         - Clean up any non-serializable options before caching.
-        
-        Returns a tuple of the post-processed dataset and the list of postprocessor configurations applied.
-        """
-        applied_postprocessors = []
-        processed_dataset = dataset
-
-        if not postprocessors:
-            return processed_dataset, applied_postprocessors
-
-        for processor_config in postprocessors:
-            operation_name = processor_config.get("proc")
-            operation_options = processor_config.get("options", {})
-
-            # If an external source is specified, load the external dataset.
-            if "src" in operation_options and isinstance(operation_options["src"], str):
-                external_identifier = operation_options.get("identifier")
-                if not external_identifier:
-                    raise ValueError("Postprocessor requires an 'identifier' for external source.")
-                external_rename = operation_options.get("rename")
-                operation_options["external_ds"] = Loader.load_external_proc_file(
-                    operation_options["src"],
-                    external_identifier,
-                    external_rename
-                )
-
-            # Retrieve the postprocessor function.
-            postprocessor_function = post_processor.get(operation_name)
-            if postprocessor_function is None:
-                raise ValueError(f"Postprocessor '{operation_name}' not found in registry.")
-
-            # Apply the postprocessor.
-            processed_dataset = postprocessor_function(processed_dataset, operation_options)
-           
-            # Remove the external_ds from options to avoid caching issues.
-            if "external_ds" in operation_options:
-                del operation_options["external_ds"]
-
-            applied_postprocessors.append(processor_config)
-
-        return processed_dataset, applied_postprocessors
 
     def cache(self, dataset: xr.Dataset, relative_path: str, parameters: Dict[str, Any]) -> None:
         """

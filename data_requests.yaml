@@ -45,7 +45,7 @@
       fix_market_equity: true
 
 # Compustat Fundamentals Data Configuration
-- data_path: wrds/fundamentals/compustat
+- data_path: wrds/equity/compustat
   config:
     # Time range and frequency settings
     start_date: "2000-01-01"

@@ -128,23 +128,12 @@ class GenericWRDSDataLoader(BaseDataSource):
         
         # Convert to xarray Dataset
         ds = self._convert_to_xarray(df, data_cols, frequency=freq_enum)
-                
-        # Apply post-processors if specified - check both formats
-        # Give precedence to traditional format if both are provided
-        postprocessors = config.get("postprocessors")
-        processors = config.get("processors") 
-        
-        if postprocessors:
-            ds = self._apply_postprocessors(ds, postprocessors)
-        elif processors:
-            ds = self._apply_postprocessors(ds, processors)
 
         # Ensure the dataset is sliced by the requested date range.
         # Not done here due to performance issues with large datasets
         # ds = self.subset_by_date(ds, config)
 
         return ds
-
 
     def _load_local(
         self, 

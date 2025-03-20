@@ -14,7 +14,6 @@ from src.data.core.util import Loader as load
 from src.data.processors.registry import post_processor
 from src.data.core.cache import CacheManager
 from src.data.filters.filters import apply_filters, parse_django_style_filters
-from src.data.processors import apply_processors, ProcessorsList, ProcessorsDictConfig
 
 class BaseDataSource(ABC):
     """
@@ -57,30 +56,6 @@ class BaseDataSource(ABC):
             
         return apply_filters(df, filters_list)
 
-    def _apply_postprocessors(self, ds: xr.Dataset, postprocessors: Union[ProcessorsList, ProcessorsDictConfig]) -> xr.Dataset:
-        """
-        Apply registered postprocessors to an xarray.Dataset.
-        
-        Supports both explicit post-processor configurations and Django-style dictionary format.
-
-        Args:
-            ds: The dataset to be processed.
-            postprocessors: Either:
-                - List of post-processor configurations (traditional format)
-                - Dictionary of Django-style post-processors (e.g., {"set_permno_coord": True})
-
-        Returns:
-            The postprocessed dataset.
-            
-        Raises:
-            ValueError: If a processor configuration is invalid or a processor is not found
-        """
-        if not postprocessors:
-            return ds
-        
-        # Use the shared apply_processors function from the processors module
-        return apply_processors(ds, postprocessors)
-   
     def _convert_to_xarray(self, df: pd.DataFrame, columns: List[str], frequency: FrequencyType = FrequencyType.DAILY) -> xr.Dataset:
         """
         Convert pandas DataFrame to xarray Dataset.
