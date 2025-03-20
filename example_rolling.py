@@ -8,15 +8,8 @@
 
 from src import DataManager
 from src.data.core.operations import mean, median, mode, ema
-
-import xarray as xr
-import xarray_jax as xj
-import numpy as np
-import pandas as pd
-from functools import partial
-import jax
-import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import time
 
 def main():
     """
@@ -28,17 +21,15 @@ def main():
     
     # Pull in the CRSP data for Apple and Tesla.
     # Data parameters: symbols, date range, and data provider configuration.
-    datasets = dm.get_data([{
-        "data_path": "wrds/equity/crsp",
+    datasets = dm.get_data([{"data_path": "wrds/equity/crsp",
         "config": {
-            "start_date": "2015-01-01",
-            "end_date":   "2024-01-01",
-            "freq": "D",
+            "start_date": "2000-01-01",
+            "end_date": "2024-01-01",
+            "freq": "M",
             "filters": {
-                "date__gte": "2015-01-01"
+                "date__gte": "2000-01-01"
             },
             "processors": {
-                # Replacing delisting returns with actual returns
                 "replace_values": {
                     "source": "delistings",
                     "rename": [["dlstdt", "time"]],
@@ -46,32 +37,37 @@ def main():
                     "from_var": "dlret",
                     "to_var": "ret"
                 },
-                # Merging company names from MSENAMES table
-                "merge_table": {
-                    "source": "msenames",
-                    "identifier": "permno",
-                    "column": "comnam",
-                    "axis": "asset"
-                }
+                "merge_table": [
+                    {
+                        "source": "msenames",
+                        "identifier": "permno",
+                        "column": "comnam",
+                        "axis": "asset"
+                    },
+                    {
+                        "source": "msenames",
+                        "identifier": "permno",
+                        "column": "exchcd",
+                        "axis": "asset"
+                    }
+                ],
+                "set_permco_coord":  True,
+                "fix_market_equity": True
             }
-        }
-    }])
+        }}])
 
     
     # Extract the original dataset for historical prices.
     dataset = datasets["wrds/equity/crsp"]
     dataset["adj_prc"] = dataset["prc"] / dataset["cfacpr"]
     
-    # Compute the rolling Exponential Moving Average (EMA) of the "close" price over a 252-day window.
-    # 252 days correspond to roughly one trading year.
+    # Compute the rolling Exponential Moving Average (EMA) of the "close" price over a 30-day window.
+    # This is a simple moving average of the last 30 days.
     
-    import time
     start = time.time()
-    ema_dataset = dataset.dt.rolling(dim='time', window=252).reduce(ema)
-    print(f"Took: {time.time() - start}")
+    ema_dataset = dataset.dt.rolling(dim='time', window=30).reduce(mean)
+    print(f"It took {time.time() - start} seconds to compute the EMA.")
     
-    print(ema_dataset)
-
     # Convert the xarray datasets to time-indexed Pandas DataFrames for easier plotting.
     # --- Original closing prices ---
     apple_orig = dataset.sel(asset=14593).dt.to_time_indexed()

@@ -61,6 +61,7 @@ class BaseDataSource(ABC):
             Filtered DataFrame
         """
         if filters_config is None:
+            print("WARNING: No filters provided, returning original DataFrame.")
             return df
             
         if isinstance(filters_config, dict):

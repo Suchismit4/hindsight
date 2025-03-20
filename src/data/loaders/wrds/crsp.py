@@ -61,7 +61,7 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
             df,
             date_col='date',
             identifier_col='permno',
-            filters_config=config.get('filters_config', {})
+            filters_config=config.get('filters', {})
         )
 
         # Convert 'permco' to int if present.

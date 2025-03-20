@@ -408,6 +408,7 @@ def apply_filters(df: pd.DataFrame, filters_config: List[Dict[str, Any]]) -> pd.
         >>> filtered_df = apply_filters(df, filters)
     """
     if not filters_config:
+        print("WARNING: No filters provided, returning original DataFrame.")
         return df
     
     # Create a copy to avoid modifying the original DataFrame
@@ -429,5 +430,5 @@ def apply_filters(df: pd.DataFrame, filters_config: List[Dict[str, Any]]) -> pd.
         
         # Apply the filter
         result = filter_func(result, params)
-        
+        print(f"Filter {filter_type} applied: {len(result)} rows")
     return result 

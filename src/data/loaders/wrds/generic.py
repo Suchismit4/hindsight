@@ -198,7 +198,6 @@ class GenericWRDSDataLoader(BaseDataSource):
         identifier_col: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         filters_config: Optional[List[Dict[str, Any]]] = None,
-        **config
     ) -> pd.DataFrame:
         """
         Preprocess the raw DataFrame for standardization and cleanup.

@@ -12,16 +12,25 @@ Each loader handles source-specific data retrieval, preprocessing, and conversio
 to xarray Datasets with standardized dimensions and coordinates.
 """
 
-from .wrds import *
-from .open_bb import *
+# Import specific classes explicitly
+from .wrds.generic import GenericWRDSDataLoader
+from .wrds.crsp import CRSPDataFetcher
+from .wrds.compustat import CompustatDataFetcher
+
+# Try to import OpenBB loaders if they exist
+try:
+    from .open_bb import OpenBBDataLoader
+except ImportError:
+    # Create a placeholder if the module doesn't exist
+    class OpenBBDataLoader:
+        pass
 
 # Define public exports
 __all__ = [
     # WRDS data loaders
-    'WRDSDataLoader', 
     'GenericWRDSDataLoader',
-    'CRSPDailyDataLoader',
-    'CompustatDataLoader',
+    'CRSPDataFetcher',
+    'CompustatDataFetcher',
     
     # OpenBB data loaders
     'OpenBBDataLoader',

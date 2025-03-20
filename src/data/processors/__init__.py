@@ -60,7 +60,7 @@ PROCESSOR_SHORTCUTS = {
     "replace_values": {
         "proc": "replace",
         "options_mapping": {
-            "source": "external_ds",
+            "source": "src",
             "from_var": "from",
             "to_var": "to",
             "identifier": "identifier",
@@ -70,7 +70,7 @@ PROCESSOR_SHORTCUTS = {
     "merge_table": {
         "proc": "merge_2d_table",
         "options_mapping": {
-            "source": "external_ds",
+            "source": "src",
             "axis": "ax1",
             "column": "ax2",
             "identifier": "identifier"
@@ -288,18 +288,18 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
     for processor_config in processors_list:
         proc_name = processor_config.get("proc")
         options = processor_config.get("options", {})
-        
+                
         if not proc_name:
             raise ValueError("Processor configuration must include 'proc' key")
         
         # If an external source is specified, load the external dataset.
-        if "source" in options and isinstance(options["source"], str):
+        if "src" in options and isinstance(options["src"], str):
             external_identifier = options.get("identifier")
             if not external_identifier:
                 raise ValueError("Postprocessor requires an 'identifier' for external source.")
             external_rename = options.get("rename")
             options["external_ds"] = Loader.load_external_proc_file(
-                    options["source"],
+                    options["src"],
                     external_identifier,
                     external_rename
             )

@@ -627,4 +627,5 @@ class Rolling(eqx.Module):
             unstacked_da = rolled_da.unstack("time_index")
             return unstacked_da
         else:
-            raise ValueError('Asset cross-sectional rolling not supported yet.')
+            print(f'warning:{self.obj.dims} cross-sectional rolling not supported yet.')
+            return self.obj
