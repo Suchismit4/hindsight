@@ -1,16 +1,20 @@
 """
-src/data/core/cache.py
+Cache management system for financial datasets.
 
-Serves as a cache manager to implement two levels of caching:
- - Level 1: The raw dataset (L1 cache)
- - Level 2: The post-processed dataset (L2 cache)
+This module implements a two-level caching system for xarray datasets:
+ - Level 1 (L1): Raw datasets before post-processing
+ - Level 2 (L2): Post-processed datasets ready for analysis
+
+The cache system helps improve performance by avoiding repetitive loading and 
+processing of large financial datasets, while also ensuring data consistency
+across multiple sessions.
 """
 
 import os
 import json
 import hashlib
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, Tuple
 import xarray as xr
 from datetime import datetime
 import pandas as pd
@@ -23,17 +27,43 @@ from src.data.processors import apply_processors
 
 
 class CacheManager:
+    """
+    Manager for two-level dataset caching system.
+    
+    Responsible for:
+    1. Determining cache keys based on data parameters
+    2. Finding and loading cached datasets
+    3. Saving datasets to cache with appropriate metadata
+    4. Managing the cache filesystem structure
+    
+    Attributes:
+        cache_root (str): Root directory for all cached data
+    """
+    
     def __init__(self, cache_root: Optional[str] = None):
         """
         Initialize the CacheManager with a root directory for cache storage.
-        If no root is provided, a default '~/data/cache' is used.
+        
+        Args:
+            cache_root: Path to the cache directory. If None, defaults to '~/data/cache'
         """
         self.cache_root = cache_root or os.path.expanduser("~/data/cache")
 
     def _convert_to_serializable(self, obj: Any) -> Any:
         """
         Recursively convert an object into a JSON-serializable structure.
-        For types that are not natively serializable, return their string representation.
+        
+        For types that are not natively serializable, returns their string representation.
+        This is used for cache metadata storage.
+        
+        Args:
+            obj: The object to convert to a JSON-serializable form
+            
+        Returns:
+            A JSON-serializable representation of the object
+            
+        Raises:
+            ValueError: If attempting to serialize an xr.Dataset directly
         """
         if isinstance(obj, (str, int, float, bool)) or obj is None:
             return obj
@@ -48,8 +78,15 @@ class CacheManager:
 
     def _normalize_parameters(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Normalize parameter keys for consistency.
-        For example, rename 'freq' to 'frequency'.
+        Normalize parameter keys for consistency in cache key generation.
+        
+        Handles common parameter naming variations, such as 'freq' vs 'frequency'.
+        
+        Args:
+            parameters: Original parameters dictionary
+            
+        Returns:
+            Dictionary with normalized parameter keys
         """
         normalized = {}
         for key, value in parameters.items():
@@ -59,8 +96,13 @@ class CacheManager:
 
     def _get_cache_directory(self, relative_path: str) -> Path:
         """
-        Determine the cache directory based on the given relative data path.
-        This directory is created if it does not already exist.
+        Determine and create the cache directory for a specific data path.
+        
+        Args:
+            relative_path: Data path identifier (e.g., 'wrds/equity/crsp')
+            
+        Returns:
+            Path object for the cache directory
         """
         sub_directory = relative_path.strip("/")
         cache_directory = os.path.join(self.cache_root, sub_directory)
@@ -69,8 +111,16 @@ class CacheManager:
 
     def _compute_cache_key(self, parameters: Dict[str, Any]) -> str:
         """
-        Compute a unique cache key based on the parameters, excluding time range parameters.
-        The parameters are normalized and then converted into a JSON-friendly string which is hashed.
+        Compute a unique cache key based on the request parameters.
+        
+        The key excludes time range parameters (start_date, end_date) since
+        these are handled separately in the cache filename.
+        
+        Args:
+            parameters: Request parameters
+            
+        Returns:
+            MD5 hash string representing the cache key
         """
         # Exclude 'start_date' and 'end_date' from the key computation.
         key_parameters = {key: value for key, value in parameters.items() if key not in ("start_date", "end_date")}
@@ -80,8 +130,18 @@ class CacheManager:
 
     def _find_existing_cache(self, cache_key: str, cache_directory: Path, parameters: Dict[str, Any]) -> Optional[Path]:
         """
-        Search the cache directory for an existing cache file that matches the cache key and parameters.
-        Returns the path to the NetCDF file if a valid cache is found; otherwise, returns None.
+        Search for an existing cache file matching the parameters.
+        
+        Validates that any candidate cache files match the requested frequency
+        and time range requirements.
+        
+        Args:
+            cache_key: The computed cache key
+            cache_directory: Directory to search for cache files
+            parameters: Request parameters with time range and frequency info
+            
+        Returns:
+            Path to matching NetCDF file if found, None otherwise
         """
         found_cache_path = None
         candidate_metadata_files = list(cache_directory.glob(f"{cache_key}_*.json"))
@@ -119,8 +179,16 @@ class CacheManager:
     def _load_from_cache(self, relative_path: str, normalized_params: Dict[str, Any],
                          cache_directory: Path, cache_key: str) -> Optional[xr.Dataset]:
         """
-        Attempt to load a cached dataset using the provided cache key and parameters.
-        Returns the dataset if found, otherwise returns None.
+        Attempt to load a dataset from cache.
+        
+        Args:
+            relative_path: Data path identifier for logging
+            normalized_params: Normalized request parameters
+            cache_directory: Directory to search for cache files
+            cache_key: The computed cache key
+            
+        Returns:
+            Loaded xarray Dataset if found and valid, None otherwise
         """
         loaded_dataset = None
         cache_file_path = self._find_existing_cache(cache_key, cache_directory, normalized_params)
@@ -137,16 +205,27 @@ class CacheManager:
 
     def fetch(self, relative_path: str, parameters: Dict[str, Any], data_loader: Optional[Any]) -> Optional[xr.Dataset]:
         """
-        Retrieve the dataset using the following steps:
-          1. Attempt to load a Level 2 (post-processed) cache.
-          2. If not found, attempt to load a Level 1 (raw) cache.
-          3. If neither cache exists and a data_loader is provided, load raw data via the loader.
-          4. Apply post-processing to the raw dataset to produce a Level 2 dataset.
-          5. Cache the Level 2 dataset and return it.
+        Retrieve a dataset using the cache system or load it if necessary.
         
+        This is the main method for accessing datasets through the cache manager.
+        The process follows these steps:
+        1. Try to load a Level 2 (post-processed) cache
+        2. If not found, try to load a Level 1 (raw) cache
+        3. If no cache exists, load raw data using the provided data_loader
+        4. Apply post-processing to create a Level 2 dataset
+        5. Cache both levels as needed
+        
+        Args:
+            relative_path: Data path identifier (e.g., 'wrds/equity/crsp')
+            parameters: Request parameters including time range, filters, processors
+            data_loader: Object with load_data method to fetch data if cache misses
+            
+        Returns:
+            The requested dataset, either from cache or freshly loaded and processed
+            
         Raises:
-          ValueError: If no caches are found and data_loader is None.
-          RuntimeError: If data loading or post-processing fails.
+            ValueError: If no cache exists and no data_loader is provided
+            RuntimeError: If data loading or post-processing fails
         """
         # Determine the cache directory based on the relative path.
         cache_directory = self._get_cache_directory(relative_path)
@@ -157,12 +236,22 @@ class CacheManager:
         # Extract postprocessor configuration (if any) from the 'config' section.
         postprocessors_config = deepcopy(parameters.get("config", {}).get("postprocessors", []))
         
+        # Also check for processors in config (Django-style) if postprocessors wasn't found
+        if not postprocessors_config:
+            postprocessors_config = deepcopy(parameters.get("config", {}).get("processors", []))
+        
         # Build cache keys:
         # Level 2 parameters include the postprocessors; Level 1 (raw) parameters exclude them.
         normalized_l2_params = self._normalize_parameters(deepcopy(parameters))
-        if "postprocessors" in parameters.get("config", {}):
-            del parameters["config"]["postprocessors"]
-        normalized_l1_params = self._normalize_parameters(deepcopy(parameters))
+        
+        # Clone parameters and remove processors for L1 key
+        l1_params = deepcopy(parameters)
+        if "postprocessors" in l1_params.get("config", {}):
+            del l1_params["config"]["postprocessors"]
+        if "processors" in l1_params.get("config", {}):
+            del l1_params["config"]["processors"]
+            
+        normalized_l1_params = self._normalize_parameters(l1_params)
         
         # Compute unique cache keys for both Level 2 and Level 1 caches.
         L2Key = self._compute_cache_key(normalized_l2_params)
@@ -185,6 +274,9 @@ class CacheManager:
             config = deepcopy(parameters.get("config", {}))
             if "postprocessors" in config:
                 del config["postprocessors"]
+            if "processors" in config:
+                del config["processors"]
+                
             try:
                 dataset_to_process = data_loader.load_data(**config)
             except Exception as e:
@@ -220,10 +312,20 @@ class CacheManager:
 
     def cache(self, dataset: xr.Dataset, relative_path: str, parameters: Dict[str, Any]) -> None:
         """
-        Save the dataset to the cache along with metadata.
-        The metadata includes the source, frequency, time range, processing instructions, and a timestamp.
-        """
+        Save a dataset to the cache system with metadata.
         
+        Creates both a NetCDF file for the dataset and a JSON file for its metadata.
+        The metadata includes information about the data source, time range,
+        frequency, and processing instructions.
+        
+        Args:
+            dataset: The xarray Dataset to cache
+            relative_path: Data path identifier (e.g., 'wrds/equity/crsp')
+            parameters: Parameters used to generate the dataset
+            
+        Raises:
+            Exception: If saving the dataset or metadata fails
+        """
         normalized_params = self._normalize_parameters(parameters)
         cache_directory = self._get_cache_directory(relative_path)
         cache_key = self._compute_cache_key(normalized_params)

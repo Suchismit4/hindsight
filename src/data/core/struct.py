@@ -1,26 +1,42 @@
-# src/data/core/struct.py
+"""
+Time series data structures and accessors for panel data in Hindsight.
 
+This module provides custom accessors for xarray datasets and data arrays that facilitate
+financial time series operations. The central components include:
+
+1. DateTimeAccessorBase: Base class implementing time series functionality
+2. DatasetDateTimeAccessor: Accessor for xarray.Dataset objects
+3. DataArrayDateTimeAccessor: Accessor for xarray.DataArray objects
+
+These accessors enable financial-specific operations like:
+- Time-based selection via business day indices
+- Converting between multi-dimensional and time-indexed formats
+- Rolling window operations with business day awareness
+- Shifting data by business days (skipping weekends/holidays)
+
+The accessors are registered with xarray using the 'dt' namespace.
+"""
 
 import numpy as np
 import xarray as xr
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any
-import equinox as eqx
 import functools
-
 
 from src.data.core.operations import TimeSeriesOps
 from .util import Rolling
 import warnings
 
+# Suppress xarray accessor registration warnings
 warnings.simplefilter("ignore", xr.core.extensions.AccessorRegistrationWarning)
 
 class DateTimeAccessorBase:
     """
     Base class for managing time series operations on panel data structures.
 
-    Provides methods to infer data dimensions, create metadata, and align datasets.
+    Provides methods to perform time-based selection, convert between data formats,
+    and apply time series operations with business day awareness.
 
     Attributes:
         _obj (Union[xr.Dataset, xr.DataArray]): The xarray object being accessed.
@@ -39,19 +55,27 @@ class DateTimeAccessorBase:
         """
         Selects data corresponding to the given time(s) using TimeSeriesIndex.
 
+        This method uses the TimeSeriesIndex stored in the time coordinate's attributes
+        to efficiently select data for the specified timestamps.
+
         Parameters:
             time: The timestamp(s) to select.
 
         Returns:
-            xarray object: The selected data.
+            Union[xr.Dataset, xr.DataArray]: The selected data.
         """
         ts_index = self._obj.coords['time'].attrs['indexes']['time']
         return self._obj.isel(**ts_index.sel(time))
 
     def to_time_indexed(self):
         """
-        Converts multi-dimensional data into time-indexed format without leaving
-        inconsistent multi-index coordinates.
+        Converts multi-dimensional data into time-indexed format.
+
+        Transforms data with separate year/month/day dimensions into a single time dimension,
+        ensuring no inconsistent multi-index coordinates remain.
+
+        Returns:
+            Union[xr.Dataset, xr.DataArray]: The time-indexed data.
         """
         ds = self._obj
 
@@ -79,12 +103,16 @@ class DateTimeAccessorBase:
         """
         Creates a Rolling object for applying rolling window operations.
 
+        The returned Rolling object properly handles business days when computing
+        rolling operations, accounting for weekends and holidays.
+
         Parameters:
             dim (str): The dimension over which to apply the rolling window.
             window (int): The size of the rolling window.
 
         Returns:
-            Rolling: An instance of the Rolling class.
+            Rolling: An instance of the Rolling class that allows applying 
+                    window operations with methods like .mean(), .sum(), etc.
         """
         # Extract mask and indices from the Dataset 
         mask = jnp.array(self._obj.coords['mask'].values)  # Shape: (T,)
@@ -101,6 +129,9 @@ class DateTimeAccessorBase:
         
         Returns:
             Union[xr.Dataset, xr.DataArray]: A new xarray object with shifted data.
+            
+        Raises:
+            ValueError: If no mask indices are found in the dataset coordinates.
         """
         obj = self._obj
         
@@ -151,10 +182,10 @@ class DateTimeAccessorBase:
             raise ValueError("No mask found and tried to shift a DataArray.")
         
         # If the DataArray is not numeric, simply return it.
-        if not np.issubdtype(self.obj.dtype, np.number):
-            return self.obj
+        if not np.issubdtype(obj.dtype, np.number):
+            return obj
         
-        stacked_obj = self.obj.stack(time_index=("year", "month", "day"))
+        stacked_obj = obj.stack(time_index=("year", "month", "day"))
         stacked_obj = stacked_obj.transpose("time_index", ...)
         
         # Convert to JAX arrays for efficient computation
@@ -177,13 +208,33 @@ class DateTimeAccessorBase:
 @xr.register_dataset_accessor('dt')
 class DatasetDateTimeAccessor(DateTimeAccessorBase):
     """
-    Extends DateTimeAccessorBase to work with xarray.Dataset objects.
+    Accessor for xarray.Dataset objects providing time series functionality.
+    
+    This class inherits all methods from DateTimeAccessorBase and is registered
+    with xarray using the 'dt' namespace.
+    
+    Example:
+        ```python
+        # Access time series functionality on an xarray Dataset
+        dataset.dt.sel(time='2022-01-01')
+        dataset.dt.rolling(dim='time', window=20).mean()
+        ```
     """
     pass
 
 @xr.register_dataarray_accessor('dt')
 class DataArrayDateTimeAccessor(DateTimeAccessorBase):
     """
-    Extends DateTimeAccessorBase to work with xarray.DataArray objects.
+    Accessor for xarray.DataArray objects providing time series functionality.
+    
+    This class inherits all methods from DateTimeAccessorBase and is registered
+    with xarray using the 'dt' namespace.
+    
+    Example:
+        ```python
+        # Access time series functionality on an xarray DataArray
+        data_array.dt.sel(time='2022-01-01')
+        data_array.dt.rolling(dim='time', window=20).mean()
+        ```
     """
     pass

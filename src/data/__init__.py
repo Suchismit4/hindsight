@@ -1,20 +1,52 @@
-# src/data/__init__.py
+"""
+Data Module for Hindsight.
+
+This module provides access to financial data from various sources, with support for:
+- Loading data from different providers (WRDS, OpenBB, etc.)
+- Caching data to avoid redundant loading
+- Processing and transforming data with various operations
+- Filtering and selecting data subsets
+
+The module is designed around the DataManager class, which serves as the
+primary interface for users to load and work with financial data.
+"""
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
-from src.data.core import *
+# Import core components
+from src.data.core import FrequencyType, TimeSeriesIndex
 from src.data.core.provider import _PROVIDER_REGISTRY
 
+# Import the main DataManager class
+from src.data.managers.data_manager import DataManager
+
+# Define public exports
+__all__ = [
+    'DataManager',
+    'FrequencyType',
+    'TimeSeriesIndex',
+    'get_default_cache_root',
+    'initialize_cache_directories'
+]
+
 def get_default_cache_root() -> str:
-    """Returns the default cache root directory."""
+    """
+    Get the default cache root directory path.
+    
+    Returns:
+        Path to the default cache directory ('~/data/cache')
+    """
     return os.path.expanduser(os.path.join('~', 'data', 'cache'))
 
-def initialize_cache_directories(cache_root: Optional[str] = None):
+def initialize_cache_directories(cache_root: Optional[str] = None) -> None:
     """
     Initialize cache directories for all registered data loaders.
-
+    
+    Creates the necessary directory structure for caching data from all
+    registered data loaders.
+    
     Args:
         cache_root: Optional custom cache directory. If None, uses default.
     """
@@ -36,5 +68,3 @@ def initialize_cache_directories(cache_root: Optional[str] = None):
 
 # Run the initialization function when the module is imported
 initialize_cache_directories()
-
-from .managers.data_manager import DataManager

@@ -1,11 +1,16 @@
-# src/data/manager.py
+"""
+Data Manager Module.
+
+This module provides the central DataManager class which serves as the main entry point
+for accessing financial data in the Hindsight system. It coordinates between various 
+data providers, handles caching, and manages the configuration of data requests.
+"""
 
 import xarray as xr
 import xarray_jax
-
+import yaml
 from typing import Union, List, Dict, Any
 import os
-import yaml  
 
 from src.data.core.provider import _PROVIDER_REGISTRY
 from src.data.loaders import *
@@ -13,39 +18,66 @@ from src.data.core.cache import CacheManager
 
 class DataManager:
     """
-    Central manager class for handling data loading and processing operations.
-
-    This class serves as the main interface for clients to interact with the
-    data framework. It coordinates between data loaders to provide a unified data access layer.
-    """
+    Central manager for data access across all data sources.
     
-    _data_loaders = {}
+    This class serves as the main interface for clients to interact with the
+    data framework. It centralizes access to various data sources through a
+    unified API, handles configuration parsing, and coordinates with the
+    cache system for efficient data retrieval.
+    
+    Attributes:
+        cache_manager: Manager for the two-level caching system
+        _data_loaders: Dictionary mapping data paths to their respective loaders
+    """
     
     def __init__(self):
         """
         Initialize the DataManager.
-
-        The manager collects data loaders from all registered providers upon initialization.
+        
+        Sets up the cache manager and collects all registered data loaders
+        from the provider registry.
         """
-        self.cache_manager = CacheManager()  # use the centralized cache manager
+        self.cache_manager = CacheManager()
         self._data_loaders = {}
+        
+        # Collect data loaders from all registered providers
         for provider in _PROVIDER_REGISTRY.values():
             self._data_loaders.update(provider.data_loaders)
 
-    def get_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> xr.DataTree:
+    def get_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> Dict[str, xr.Dataset]:
         """
-        Retrieve data for the specified data paths with their configurations.
-
+        Retrieve data based on specified configurations.
+        
+        This method supports two ways of specifying data requests:
+        1. A list of request dictionaries with data_path and config keys
+        2. A path to a YAML configuration file containing the request list
+        
+        Each data request must specify both start_date and end_date in its config.
+        
         Args:
-            data_requests: Either a list of dictionaries as before, or a string path to a YAML config file.
+            data_requests: Either a list of request dictionaries or a path to a YAML config file
+                
+                Example request dictionary:
+                {
+                    "data_path": "wrds/equity/crsp",
+                    "config": {
+                        "start_date": "2000-01-01",
+                        "end_date": "2024-01-01",
+                        "freq": "M",
+                        "filters": {"date__gte": "2000-01-01"},
+                        "processors": {"set_permno_coord": True}
+                    }
+                }
 
         Returns:
-            xr.DataTree: The requested data merged into a single DataTree.
-
+            Dictionary mapping data paths to their corresponding xarray Datasets
+            
         Raises:
-            ValueError: If no suitable loader is available for a data path.
+            TypeError: If the YAML file doesn't contain a list of requests
+            ValueError: If start_date or end_date is missing, or if no loader exists
+            BrokenPipeError: If data fetching fails unexpectedly
         """
-        # If data_requests is a string, assume it's a path to a YAML config file
+        # If data_requests is a string, load it as a YAML config file
         if isinstance(data_requests, str):
             with open(data_requests, 'r') as f:
                 data_requests = yaml.safe_load(f)
@@ -58,7 +90,7 @@ class DataManager:
             data_path = request.get('data_path')
             config = request.get('config', {})
             
-            # Enforce that both start_date and end_date are provided.
+            # Enforce that both start_date and end_date are provided
             if not config.get("start_date") or not config.get("end_date"):
                 raise ValueError(f"Request for '{data_path}' must specify both 'start_date' and 'end_date'.")
 
@@ -68,10 +100,15 @@ class DataManager:
 
             loader = self._data_loaders[data_path]
 
-            data = self.cache_manager.fetch(relative_path=data_path, parameters=request, data_loader=loader)
+            # Fetch data through the cache manager
+            data = self.cache_manager.fetch(
+                relative_path=data_path, 
+                parameters=request, 
+                data_loader=loader
+            )
             
             if data is None:
-                raise BrokenPipeError("Something went wrong trying to fetch data from cache...")
+                raise BrokenPipeError(f"Failed to fetch data for path '{data_path}'")
 
             collected_data[data_path] = data
 
@@ -79,43 +116,57 @@ class DataManager:
     
     def get_available_data_paths(self) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dictionary of all available data paths in the registry, along with
-        the top-level provider and any sub-providers (if applicable).
+        Get information about all available data paths in the system.
+        
+        Returns a dictionary with details about each data path, including
+        its provider and any sub-providers (for providers like OpenBB that
+        offer multiple data sources).
         
         Returns:
-            Dict[str, Dict[str, Any]]: For each data_path, a dictionary with:
+            Dictionary mapping each data_path to its provider information:
             {
-                "provider": "openbb" | "wrds" | etc.,
-                "sub_providers": ["yfinance", "fmp", ...] or [None]
+                "wrds/equity/crsp": {
+                    "provider": "wrds",
+                    "sub_providers": [None]
+                },
+                "openbb/equity/price/historical": {
+                    "provider": "openbb",
+                    "sub_providers": ["yfinance", "fmp", ...]
+                },
+                ...
             }
         """
         # Build a mapping from "openbb/equities/price/historical" -> ["yfinance", "fmp", ...]
         coverage_map = {}
         
+        # Handle OpenBB provider specially since it has sub-providers
         if "openbb" in _PROVIDER_REGISTRY: 
-            coverage_dict = obb.coverage.providers
-            
-            for subp, coverage_paths in coverage_dict.items():
-                for dot_path in coverage_paths:
-                    # convert "equities.price.historical" > "equities/price/historical"
-                    slash_path = dot_path.replace(".", "/")
-                    
-                    # Ensure path starts with "openbb/"
-                    full_data_path = (
-                        f"openbb{slash_path}"
-                    )
-                    
-                    # Initialize list if not exists, then append
-                    if full_data_path not in coverage_map:
-                        coverage_map[full_data_path] = []
-                    coverage_map[full_data_path].append(subp)
+            try:
+                import openbb as obb
+                coverage_dict = obb.coverage.providers
+                
+                for subp, coverage_paths in coverage_dict.items():
+                    for dot_path in coverage_paths:
+                        # convert "equities.price.historical" > "equities/price/historical"
+                        slash_path = dot_path.replace(".", "/")
+                        
+                        # Ensure path starts with "openbb/"
+                        full_data_path = f"openbb/{slash_path}"
+                        
+                        # Initialize list if not exists, then append
+                        if full_data_path not in coverage_map:
+                            coverage_map[full_data_path] = []
+                        coverage_map[full_data_path].append(subp)
+            except ImportError:
+                # OpenBB might not be installed, continue without it
+                pass
 
         # For each registered provider and each data_path it supports, collect info
         results = {}
         
         for provider in _PROVIDER_REGISTRY.values(): 
             # provider._data_loaders is a dict: { "wrds/equities/compustat": loader, ... }
-            for dp in provider._data_loaders.keys():
+            for dp in provider.data_loaders.keys():
                 if provider.name == "openbb":
                     # Look up sub-providers from coverage_map
                     # Normalize the data path to ensure consistent lookup

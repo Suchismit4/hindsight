@@ -1,5 +1,13 @@
 # src/data/loaders/abstracts/base.py
 
+"""
+Abstract base classes for data sources.
+
+This module provides the foundation for all data loaders in the system.
+BaseDataSource defines the interface and shared functionality that all
+specific data loaders must implement.
+"""
+
 import os
 import pandas as pd
 import xarray as xr
@@ -22,11 +30,19 @@ class BaseDataSource(ABC):
     This class provides the foundational logic for accessing different data sources
     defined in the paths.yaml configuration file. It also handles interactions with
     the cache system, including saving/loading xarray Datasets as NetCDF.
+    
+    Attributes:
+        data_path (str): Path to the data source used for cache management
     """
 
     def __init__(self, data_path: str):
-        """Initialize the data source with the given data path."""
-        self.data_path = data_path  # This is used in cache path generation
+        """
+        Initialize the data source with the given data path.
+        
+        Args:
+            data_path: Path identifier for the data source, used in cache path generation
+        """
+        self.data_path = data_path
             
     def apply_filters(self, df: pd.DataFrame, filters_config: Union[List[Dict[str, Any]], Dict[str, Any], None]) -> pd.DataFrame:
         """
@@ -35,14 +51,14 @@ class BaseDataSource(ABC):
         Supports both explicit filter configurations and Django-style filter dictionaries.
         
         Args:
-            df: The DataFrame to filter.
+            df: The DataFrame to filter
             filters_config: Either:
                 - List of filter configurations (explicit format)
                 - Dictionary of Django-style filters (e.g., {"column__gte": value})
                 - None (no filtering will be performed)
             
         Returns:
-            pd.DataFrame: The filtered DataFrame.
+            Filtered DataFrame
         """
         if filters_config is None:
             return df
@@ -59,6 +75,9 @@ class BaseDataSource(ABC):
     def _convert_to_xarray(self, df: pd.DataFrame, columns: List[str], frequency: FrequencyType = FrequencyType.DAILY) -> xr.Dataset:
         """
         Convert pandas DataFrame to xarray Dataset.
+        
+        Creates a properly structured xarray Dataset with appropriate dimensions
+        and coordinates from a pandas DataFrame.
         
         Args:
             df: DataFrame to convert
@@ -91,7 +110,10 @@ class BaseDataSource(ABC):
 
     def subset_by_date(self, ds: xr.Dataset, config: Dict[str, Any]) -> xr.Dataset:
         """
-        Validate that both start_date and end_date are provided, and subset the dataset's time dimension.
+        Subset the dataset's time dimension by date range.
+        
+        Validates that both start_date and end_date are provided, and subsets
+        the dataset's time dimension accordingly.
         
         Args:
             ds: Dataset to subset
@@ -110,7 +132,10 @@ class BaseDataSource(ABC):
     @abstractmethod
     def load_data(self, **kwargs) -> Union[xr.Dataset, xr.DataTree]:
         """
-        Abstract method to load data. Must be implemented by subclasses.
+        Load data from the source.
+        
+        This abstract method must be implemented by subclasses to load data
+        from the specific data source according to the provided configuration.
         
         Args:
             **kwargs: Configuration parameters for loading data

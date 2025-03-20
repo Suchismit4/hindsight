@@ -1,4 +1,17 @@
-# src/data/filters/filters.py
+"""
+DataFrame filters implementation.
+
+This module provides a comprehensive set of filters for pandas DataFrames,
+along with utilities for parsing different filter formats. The filters are
+registered in a central registry for extensibility.
+
+The module supports two primary filter formats:
+1. Explicit filter configurations (lists of filter dictionaries)
+2. Django-style filter syntax (more concise dictionary format)
+
+Each filter function returns a filtered DataFrame, allowing them to be
+chained together for complex filtering operations.
+"""
 
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Union, Optional
@@ -21,10 +34,16 @@ DJANGO_FILTER_SUFFIX_MAP = {
     "date_range": ("date_range_filter", None)
 }
 
+# ===============================================================================
+# Core Filter Functions
+# ===============================================================================
+
 @filter_registry
 def equality_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply equality filter to a DataFrame.
+    
+    Selects rows where a column equals a specific value.
     
     Args:
         df: The DataFrame to filter
@@ -34,6 +53,9 @@ def equality_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
             
     Returns:
         Filtered DataFrame
+        
+    Raises:
+        ValueError: If required parameters are missing
     """
     column = params.get("column")
     value = params.get("value")
@@ -53,6 +75,8 @@ def comparison_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply comparison filter to a DataFrame.
     
+    Selects rows where a column satisfies a comparison with a specific value.
+    
     Args:
         df: The DataFrame to filter
         params: Parameters with keys:
@@ -62,6 +86,9 @@ def comparison_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
             
     Returns:
         Filtered DataFrame
+        
+    Raises:
+        ValueError: If required parameters are missing or operator is unsupported
     """
     column = params.get("column")
     operator = params.get("operator")
@@ -96,6 +123,8 @@ def in_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply an 'in' filter to a DataFrame.
     
+    Selects rows where a column's value is in a list of values.
+    
     Args:
         df: The DataFrame to filter
         params: Parameters with keys:
@@ -104,6 +133,9 @@ def in_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
             
     Returns:
         Filtered DataFrame
+        
+    Raises:
+        ValueError: If required parameters are missing
     """
     column = params.get("column")
     values = params.get("values")
@@ -123,6 +155,8 @@ def not_in_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply a 'not in' filter to a DataFrame.
     
+    Selects rows where a column's value is not in a list of values.
+    
     Args:
         df: The DataFrame to filter
         params: Parameters with keys:
@@ -131,6 +165,9 @@ def not_in_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
             
     Returns:
         Filtered DataFrame
+        
+    Raises:
+        ValueError: If required parameters are missing
     """
     column = params.get("column")
     values = params.get("values")
@@ -150,6 +187,9 @@ def range_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply a range filter to a DataFrame.
     
+    Selects rows where a column's value is within a specified range.
+    Both min and max are inclusive boundaries.
+    
     Args:
         df: The DataFrame to filter
         params: Parameters with keys:
@@ -159,6 +199,9 @@ def range_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
             
     Returns:
         Filtered DataFrame
+        
+    Raises:
+        ValueError: If column is missing or both min and max are missing
     """
     column = params.get("column")
     min_value = params.get("min_value")
@@ -189,15 +232,21 @@ def date_range_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     """
     Apply date range filter to a DataFrame.
     
+    Selects rows where a date column's value falls within a specified date range.
+    Both start and end dates are inclusive boundaries.
+    
     Args:
         df: The DataFrame to filter
         params: Parameters with keys:
-            - date_column: The date column to filter on
-            - start_date: The start date (inclusive)
-            - end_date: The end date (inclusive)
+            - date_column: The date column to filter on (defaults to 'date')
+            - start_date: The start date (inclusive, optional)
+            - end_date: The end date (inclusive, optional)
             
     Returns:
         Filtered DataFrame
+        
+    Note:
+        If neither start_date nor end_date is provided, returns the original DataFrame
     """
     date_column = params.get("date_column", "date")
     start_date = params.get("start_date")
@@ -224,11 +273,18 @@ def date_range_filter(df: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
     print(f"Date range filter {date_column} [{start_date} to {end_date}]: {pre_filter_len} -> {post_filter_len} rows")
     return df
 
+# ===============================================================================
+# Filter Parsing and Application
+# ===============================================================================
+
 def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Parse Django-style filters into filter configurations.
     
-    Supports:
+    Converts a user-friendly Django-style filter dictionary into the explicit
+    filter configuration format required by the filter functions.
+    
+    Supported formats:
     - column: value                  -> equality_filter
     - column__eq: value              -> equality_filter
     - column__ne: value              -> comparison_filter (!=)
@@ -245,7 +301,14 @@ def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, A
         filters_dict: Dictionary of Django-style filters
         
     Returns:
-        List of filter configurations
+        List of filter configurations ready for apply_filters
+        
+    Examples:
+        >>> parse_django_style_filters({"ticker": "AAPL"})
+        [{"type": "equality_filter", "column": "ticker", "value": "AAPL"}]
+        
+        >>> parse_django_style_filters({"price__gte": 150})
+        [{"type": "comparison_filter", "column": "price", "operator": ">=", "value": 150}]
     """
     if not filters_dict:
         return []
@@ -253,105 +316,118 @@ def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, A
     filter_configs = []
     
     for key, value in filters_dict.items():
-        # Parse the key to extract column and any suffix
-        parts = key.split("__")
+        # Check if key contains a double underscore separator for Django-style filters
+        parts = key.split('__')
+        column = parts[0]
         
+        # Simple equality check without double underscore (e.g., "ticker": "AAPL")
         if len(parts) == 1:
-            # Simple column: value format (equality filter)
-            column = parts[0]
-            
-            # Auto-detect list and treat as 'in' filter if it's a list but not for range
-            if isinstance(value, (list, tuple)) and len(value) > 0:
-                filter_configs.append({
-                    "type": "in_filter",
-                    "column": column,
-                    "values": value
-                })
-            else:
-                # Regular equality filter
-                filter_configs.append({
-                    "type": "equality_filter",
-                    "column": column,
-                    "value": value
-                })
-        else:
-            # Django-style column__suffix format
-            column = parts[0]
-            suffix = parts[1]
-            
-            if suffix not in DJANGO_FILTER_SUFFIX_MAP:
-                raise ValueError(f"Unsupported filter suffix '{suffix}' in '{key}'")
-            
-            filter_type, operator = DJANGO_FILTER_SUFFIX_MAP[suffix]
-            
-            # Create the appropriate filter config based on type
-            if filter_type == "equality_filter":
-                filter_configs.append({
-                    "type": "equality_filter",
-                    "column": column,
-                    "value": value
-                })
-            elif filter_type == "comparison_filter":
-                filter_configs.append({
-                    "type": "comparison_filter",
-                    "column": column,
-                    "operator": operator,
-                    "value": value
-                })
-            elif filter_type in ("in_filter", "not_in_filter"):
-                # Convert single value to list if needed
-                values = value if isinstance(value, (list, tuple)) else [value]
-                filter_configs.append({
-                    "type": filter_type,
-                    "column": column,
-                    "values": values
-                })
-            elif filter_type == "range_filter":
-                if not isinstance(value, (list, tuple)) or len(value) != 2:
-                    raise ValueError(f"Range filter for '{key}' expects a list/tuple of [min, max]")
-                filter_configs.append({
-                    "type": "range_filter",
-                    "column": column,
-                    "min_value": value[0] if value[0] is not None else None,
-                    "max_value": value[1] if value[1] is not None else None
-                })
-            elif filter_type == "date_range_filter":
-                if not isinstance(value, (list, tuple)) or len(value) != 2:
-                    raise ValueError(f"Date range filter for '{key}' expects a list/tuple of [start_date, end_date]")
-                filter_configs.append({
-                    "type": "date_range_filter",
-                    "date_column": column,
-                    "start_date": value[0] if value[0] is not None else None,
-                    "end_date": value[1] if value[1] is not None else None
-                })
+            filter_configs.append({
+                "type": "equality_filter",
+                "column": column,
+                "value": value
+            })
+            continue
+        
+        # Extract suffix (e.g., "gte" from "price__gte")
+        suffix = parts[1]
+        
+        # Check suffix against mapping
+        if suffix not in DJANGO_FILTER_SUFFIX_MAP:
+            raise ValueError(f"Unsupported filter suffix '{suffix}' in '{key}'.")
+        
+        filter_type, operator = DJANGO_FILTER_SUFFIX_MAP[suffix]
+        
+        # Handle specific filter types
+        if filter_type == "equality_filter":
+            filter_configs.append({
+                "type": filter_type,
+                "column": column,
+                "value": value
+            })
+        elif filter_type == "comparison_filter":
+            filter_configs.append({
+                "type": filter_type,
+                "column": column,
+                "operator": operator,
+                "value": value
+            })
+        elif filter_type == "in_filter" or filter_type == "not_in_filter":
+            if not isinstance(value, (list, tuple)):
+                value = [value]  # Convert single value to list
+            filter_configs.append({
+                "type": filter_type,
+                "column": column,
+                "values": value
+            })
+        elif filter_type == "range_filter":
+            if not isinstance(value, (list, tuple)) or len(value) != 2:
+                raise ValueError(f"Range filter for '{key}' must provide a list or tuple with two values: [min, max].")
+            filter_configs.append({
+                "type": filter_type,
+                "column": column,
+                "min_value": value[0],
+                "max_value": value[1]
+            })
+        elif filter_type == "date_range_filter":
+            if not isinstance(value, (list, tuple)) or len(value) != 2:
+                raise ValueError(f"Date range filter for '{key}' must provide a list or tuple with two values: [start_date, end_date].")
+            filter_configs.append({
+                "type": filter_type,
+                "date_column": column,
+                "start_date": value[0],
+                "end_date": value[1]
+            })
     
     return filter_configs
-                
+
 def apply_filters(df: pd.DataFrame, filters_config: List[Dict[str, Any]]) -> pd.DataFrame:
     """
     Apply a series of filters to a DataFrame.
     
+    Processes a DataFrame through multiple filter operations, applying each filter
+    in sequence. The filters are applied in the order they appear in the list.
+    
     Args:
         df: The DataFrame to filter
-        filters_config: List of filter configurations
-        
+        filters_config: List of filter configurations, each containing:
+            - type: The name of the filter function to use
+            - Additional parameters specific to the filter type
+    
     Returns:
         Filtered DataFrame
+        
+    Raises:
+        ValueError: If a filter configuration is invalid or a filter is not found
+        
+    Example:
+        >>> filters = [
+        ...     {"type": "equality_filter", "column": "ticker", "value": "AAPL"},
+        ...     {"type": "comparison_filter", "column": "price", "operator": ">=", "value": 150}
+        ... ]
+        >>> filtered_df = apply_filters(df, filters)
     """
     if not filters_config:
         return df
     
-    filtered_df = df.copy()
+    # Create a copy to avoid modifying the original DataFrame
+    result = df.copy()
     
     for filter_config in filters_config:
         filter_type = filter_config.get("type")
-        if filter_type is None:
-            raise ValueError("Filter type must be specified in filter config.")
         
+        if not filter_type:
+            raise ValueError("Filter configuration must include 'type' key")
+        
+        # Extract parameters for the filter (excluding 'type')
+        params = {k: v for k, v in filter_config.items() if k != "type"}
+        
+        # Get the filter function from the registry
         filter_func = filter_registry.get(filter_type)
-        if filter_func is None:
+        if not filter_func:
             raise ValueError(f"Unknown filter type: {filter_type}")
         
-        filtered_df = filter_func(filtered_df, filter_config)
-    
-    return filtered_df 
+        # Apply the filter
+        result = filter_func(result, params)
+        
+    return result 

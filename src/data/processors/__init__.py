@@ -1,10 +1,29 @@
 """
 Data processors for xarray datasets.
 
-This module provides post-processors and utilities for transforming xarray datasets.
-The processors operate on xarray Datasets and return modified Datasets, with each
-processor implementing a specific transformation (e.g., merging data, fixing values,
-setting coordinates).
+This module provides post-processors for transforming xarray datasets. Each processor
+implements a specific financial data transformation, including:
+
+1. Data merging and replacement operations
+2. Coordinate handling (e.g., setting PERMNO, PERMCO as coordinates)
+3. Financial calculations and corrections (e.g., preferred stock, market equity)
+
+The module defines both traditional and Django-style processor configurations.
+Django-style configuration uses a more user-friendly format with shortcuts
+for common processor operations.
+
+Example:
+    # Traditional format
+    processor_config = [
+        {"proc": "set_permno", "options": {}},
+        {"proc": "fix_mke", "options": {}}
+    ]
+    
+    # Django-style format
+    processor_config = {
+        "set_permno_coord": True,
+        "fix_market_equity": True
+    }
 """
 
 from typing import Dict, Any, List, Union, Optional, TypeVar, Callable, Sequence
@@ -35,8 +54,9 @@ ProcessorConfig = Dict[str, Any]
 ProcessorsList = List[ProcessorConfig]
 ProcessorsDictConfig = Dict[str, Union[bool, Dict[str, Any], List[Dict[str, Any]]]]
 
-# Define processor configuration shortcuts
+# Define processor configuration shortcuts (Django-style to traditional mapping)
 PROCESSOR_SHORTCUTS = {
+    # Data replacement and merging
     "replace_values": {
         "proc": "replace",
         "options_mapping": {
@@ -56,6 +76,8 @@ PROCESSOR_SHORTCUTS = {
             "identifier": "identifier"
         }
     },
+    
+    # Coordinate handling
     "set_permno_coord": {
         "proc": "set_permno",
         "options_mapping": {}
@@ -64,6 +86,8 @@ PROCESSOR_SHORTCUTS = {
         "proc": "set_permco",
         "options_mapping": {}
     },
+    
+    # Financial calculations
     "fix_market_equity": {
         "proc": "fix_mke",
         "options_mapping": {}
@@ -104,6 +128,8 @@ def _map_options(options: Dict[str, Any], options_mapping: Dict[str, str]) -> Di
     """
     Maps options from user-friendly keys to internal option keys.
     
+    Converts keys from the Django-style format to the format expected by processor functions.
+    
     Args:
         options: Dictionary of user-provided options
         options_mapping: Mapping from user-friendly keys to internal keys
@@ -122,6 +148,8 @@ def _map_options(options: Dict[str, Any], options_mapping: Dict[str, str]) -> Di
 def parse_processors_config(processors_dict: ProcessorsDictConfig) -> ProcessorsList:
     """
     Parse a Django-style processors dictionary into the standard format.
+    
+    Converts the user-friendly configuration to the internal processors format.
     
     Examples:
         >>> # Simple processor with no options
@@ -213,7 +241,9 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
     """
     Apply a series of post-processors to an xarray Dataset.
     
-    Supports both traditional processor list format and Django-style format.
+    Processes an xarray Dataset through a sequence of processors, which transform
+    the data according to their respective functions. Supports both traditional
+    and Django-style processor configurations.
     
     Args:
         ds: Dataset to process
@@ -222,7 +252,7 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
             - Dictionary of Django-style processor configurations
         
     Returns:
-        Processed Dataset
+        Tuple of (processed Dataset, list of applied processors)
         
     Raises:
         ValueError: If a processor configuration is invalid or a processor is not found
@@ -233,14 +263,14 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
         ...     {"proc": "set_permno", "options": {}},
         ...     {"proc": "fix_mke", "options": {}}
         ... ]
-        >>> processed_ds = apply_processors(ds, processors_list)
+        >>> processed_ds, applied = apply_processors(ds, processors_list)
         
         >>> # Django-style format
         >>> processors_dict = {
         ...     "set_permno_coord": True,
         ...     "fix_market_equity": True
         ... }
-        >>> processed_ds = apply_processors(ds, processors_dict)
+        >>> processed_ds, applied = apply_processors(ds, processors_dict)
     """
     if not processors:
         return ds, []

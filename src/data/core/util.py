@@ -1,4 +1,16 @@
-# src/data/core/util.py
+"""
+Core utility classes and functions for time series data handling in Hindsight.
+
+This module provides foundational utilities for working with financial time series data, including:
+
+1. FrequencyType: Enumeration of supported data frequencies (daily, weekly, monthly, yearly)
+2. TimeSeriesIndex: Maps timestamps to multi-dimensional indices for efficient access
+3. Loader: Functions for loading and transforming financial data into xarray datasets
+4. Rolling: Custom implementation of rolling window operations for time series data
+
+These utilities form the backbone of Hindsight's data handling capabilities,
+enabling efficient storage, access, and manipulation of financial panel data.
+"""
 
 import os
 import numpy as np
@@ -16,7 +28,15 @@ from src.data.core.operations import TimeSeriesOps
 class FrequencyType(Enum):
     """
     Enumeration of supported data frequencies.
-    Used for proper alignment in cross-frequency operations.
+    
+    Used for proper alignment and handling in cross-frequency operations and
+    for correct time dimension creation in datasets.
+    
+    Attributes:
+        DAILY: Daily frequency ('D')
+        WEEKLY: Weekly frequency ('W')
+        MONTHLY: Monthly frequency ('M')
+        YEARLY/ANNUAL: Annual frequency ('Y')
     """
     DAILY     = 'D'
     WEEKLY    = 'W'
@@ -27,6 +47,10 @@ class FrequencyType(Enum):
 class TimeSeriesIndex:
     """
     A class to map timestamps to indices in a multi-dimensional time coordinate.
+    
+    This provides efficient access to time-indexed data by converting between
+    timestamps and their corresponding indices in the dataset, enabling fast
+    time-based selection and alignment.
 
     Attributes:
         time_coord (xr.DataArray): The time coordinate DataArray.
@@ -35,6 +59,13 @@ class TimeSeriesIndex:
     """
     
     def __init__(self, time_coord: xr.DataArray):
+        """
+        Initialize a TimeSeriesIndex from a time coordinate DataArray.
+        
+        Parameters:
+            time_coord (xr.DataArray): The time coordinate array, typically 
+                with dimensions (year, month, day).
+        """
         self.time_coord = time_coord
        
         # Use np.ravel with C order to obtain a flat view of the time coordinate.
@@ -53,7 +84,10 @@ class TimeSeriesIndex:
 
     def sel(self, labels, method=None, tolerance=None):
         """
-        Selects indices corresponding to the given labels.
+        Selects indices corresponding to the given time labels.
+
+        This method translates time-based selections into multi-dimensional indices
+        that can be used with .isel() for efficient data access.
 
         Parameters:
             labels: The timestamp(s) to select. This can be:
@@ -66,6 +100,10 @@ class TimeSeriesIndex:
 
         Returns:
             dict: A dictionary mapping dimension names to multi-dimensional indices.
+
+        Raises:
+            ValueError: If a slice without start and stop is provided.
+            KeyError: If specified timestamps are not found in the index.
 
         Note:
             This implementation assumes that the flattened time coordinate (derived via ravel(order="C"))
@@ -115,6 +153,13 @@ class TimeSeriesIndex:
         return dict(zip(dim_names, multi_indices))
 
 class Loader:
+    """
+    Utility class for loading and transforming financial data into xarray datasets.
+    
+    This class provides methods to load data from various sources (such as SAS datasets)
+    and convert them into the standardized xarray Dataset format used throughout Hindsight.
+    It handles date conversions, dimension creation, and proper data organization.
+    """
     
     DEFAULT_PATHS = {
         "msenames": "/wrds/crsp/sasdata/a_stock/msenames.sas7bdat",
@@ -122,10 +167,20 @@ class Loader:
     }
     
     @classmethod
-    def load_external_proc_file(cls, src_or_name: str, identifier: str, rename: Optional[List[List[str]]] = None) -> xr.Dataset | pd.DataFrame:
+    def load_external_proc_file(cls, src_or_name: str, identifier: str, rename: Optional[List[List[str]]] = None) -> Union[xr.Dataset, pd.DataFrame]:
         """
-        Load an external SAS file (specified either by a file path or a known source name)
-        and convert it to an xarray.Dataset.
+        Load an external SAS file and convert it to an xarray.Dataset.
+        
+        Parameters:
+            src_or_name (str): Either a file path or a known source name from DEFAULT_PATHS.
+            identifier (str): Column name to use as the identifier (will be renamed to "identifier").
+            rename (Optional[List[List[str]]]): Optional list of [source, destination] column name pairs to rename.
+            
+        Returns:
+            Union[xr.Dataset, pd.DataFrame]: Data as an xarray Dataset if time column is found, otherwise as DataFrame.
+            
+        Raises:
+            ValueError: If source not found or identifier column not present.
         """
         
         file_path = None
@@ -184,7 +239,7 @@ class Loader:
         """
         Convert a numeric SAS date column to a proper Pandas datetime.
 
-        Args:
+        Parameters:
             sas_date_col (pd.Series): Column of SAS date ints.
             epoch (str): Base epoch for SAS (default '1960-01-01').
 
@@ -205,28 +260,25 @@ class Loader:
     ) -> xr.Dataset:
         """
         Creates an xarray Dataset from a table (Pandas DataFrame), with fixed-size time dimensions.
-        This function performs various transformations and coordinate assignments to build a 4D structure
-        (years, months, days, assets). It ensures that each dimension is set according to the specified
-        frequency, and then loads feature values into the corresponding positions in a new xarray Dataset.
+        
+        This function transforms tabular data into a multi-dimensional xarray structure with
+        year, month, day, and asset dimensions. It handles frequency-specific time dimension
+        creation, coordinate assignments, and proper indexing for time series operations.
 
         Parameters:
-            data : pd.DataFrame
-                The input data table containing time, asset, and feature columns.
-            time_column : str
-                Name of the time column in the data.
-            asset_column : str
-                Name of the asset column in the data.
-            feature_columns : list of str, optional
-                List of feature columns whose values should be placed in the xarray Dataset.
-                If None, all columns except time_column, year, month, day, and asset_column will be treated as features.
-            frequency : FrequencyType
-                The frequency of the data. Must be one of YEARLY, MONTHLY, or DAILY.
+            data (pd.DataFrame): Input data table with time, asset, and feature columns.
+            time_column (str): Name of the time column in the data.
+            asset_column (str): Name of the asset column in the data.
+            feature_columns (Optional[List[str]]): List of feature columns. If None, all columns 
+                except time_column, year, month, day, and asset_column will be treated as features.
+            frequency (FrequencyType): The frequency of the data (YEARLY, MONTHLY, or DAILY).
 
         Returns:
-            xr.Dataset
-                The resulting Dataset with the dimensions (year, month, day, asset) and the given
-                features as variables. It also attaches a time coordinate computed from the year, month,
-                and day values, and includes a custom index for time management.
+            xr.Dataset: Dataset with dimensions (year, month, day, asset) and the given
+                features as variables, with time coordinate and business day masks.
+                
+        Raises:
+            ValueError: If frequency is not supported or required columns are missing.
         """
         
         # We create a copy of the original data to avoid any unintended modifications
@@ -435,6 +487,17 @@ class Loader:
 class Rolling(eqx.Module):
     """
     Custom Rolling class to apply rolling window operations using JAX.
+    
+    This class enables efficient rolling window calculations on time series data,
+    with proper handling of business days, weekends, and holidays. It uses JAX for
+    accelerated computation of window operations.
+    
+    Attributes:
+        obj (Union[xr.DataArray, xr.Dataset]): The xarray object to apply rolling on.
+        dim (str): The dimension over which to apply the rolling window.
+        window (int): The size of the rolling window.
+        mask (jnp.ndarray): Boolean mask indicating valid business days.
+        indices (jnp.ndarray): Indices mapping business days to positions.
     """
     
     obj:    Union[xr.DataArray, xr.Dataset]
@@ -453,10 +516,12 @@ class Rolling(eqx.Module):
         """
         Initializes the Rolling object.
 
-        Args:
+        Parameters:
             obj (Union[xr.DataArray, xr.Dataset]): The xarray object to apply rolling on.
             dim (str): The dimension over which to apply the rolling window.
             window (int): The size of the rolling window.
+            mask (jnp.ndarray): Boolean mask indicating valid business days.
+            indices (jnp.ndarray): Indices mapping business days to positions.
         """
         self.obj = obj
         self.dim = dim
@@ -470,9 +535,23 @@ class Rolling(eqx.Module):
                overlap_factor: Optional[float] = None
               ) -> Union[xr.DataArray, xr.Dataset]:
         """
-        Main reduce method. For a Dataset, process each variable separately:
-        - For numeric variables, apply the rolling operation.
-        - For non-numeric variables, leave them unchanged.
+        Apply a rolling window reduction function to the data.
+        
+        This method handles both Dataset and DataArray objects, applying the rolling
+        operation to each numeric variable while preserving non-numeric variables.
+
+        Parameters:
+            func (Callable): The reduction function to apply to each window.
+                The function should take (window_size, initial_state, data, axis) and
+                return (result, final_state).
+            overlap_factor (Optional[float]): If specified, requires at least this
+                fraction of the window to contain valid data.
+
+        Returns:
+            Union[xr.DataArray, xr.Dataset]: The result of applying the rolling operation.
+            
+        Raises:
+            TypeError: If the xarray object type is not supported.
         """
         if isinstance(self.obj, xr.Dataset):
             rolled_data = {}
@@ -495,8 +574,20 @@ class Rolling(eqx.Module):
                           overlap_factor: Optional[float] = None
                          ) -> xr.DataArray:
         """
-        Jitted rolling reduction for a DataArray. This method ensures that the underlying
-        array is numeric before proceeding.
+        JIT-compiled implementation of rolling reduction for DataArrays.
+        
+        This method handles the actual JAX-based computation, converting data to
+        JAX arrays, applying the rolling operation, and reconstructing the DataArray.
+
+        Parameters:
+            func (Callable): The reduction function to apply to each window.
+            overlap_factor (Optional[float]): Minimum fraction of valid data required.
+
+        Returns:
+            xr.DataArray: The result of the rolling operation.
+            
+        Raises:
+            ValueError: If the dimension is not supported.
         """
         # If the DataArray is not numeric, simply return it.
         if not np.issubdtype(self.obj.dtype, np.number):

@@ -3,9 +3,16 @@
 """
 Generic WRDS data loader implementation.
 
-This loader reads a primary SAS table, converts it to an xarray.Dataset (using
-the shared Loader.from_table logic in core/util.py), and then applies a sequence
-of atomic postprocessing operations defined in the configuration.
+This module provides a GenericWRDSDataLoader class that serves as the foundation
+for loading financial data from WRDS (Wharton Research Data Services) databases.
+The loader reads a primary SAS table, converts it to an xarray.Dataset, and applies
+a sequence of post-processing operations defined in the configuration.
+
+Key features:
+- Multi-process SAS file reading for performance
+- Configurable column selection and filtering
+- Standardized date handling and identifier mapping
+- Integration with the post-processing framework
 """
 
 import os
@@ -22,6 +29,9 @@ from src.data.processors import ProcessorsList, ProcessorsDictConfig
 def multiprocess_read(src: str, num_processes: int, columns_to_read: Optional[List[str]]) -> pd.DataFrame:
     """
     Read a SAS file using multiprocessing for better performance.
+    
+    Utilizes pyreadstat's multiprocessing capability to efficiently read large SAS files
+    by distributing the work across multiple CPU cores.
     
     Args:
         src: Path to the SAS file
@@ -54,8 +64,16 @@ def multiprocess_read(src: str, num_processes: int, columns_to_read: Optional[Li
 
 class GenericWRDSDataLoader(BaseDataSource):
     """
-    A generic WRDS data loader that loads and assembles multiple SAS tables into a single xarray.Dataset
-    based on a configurable YAML/JSON file.
+    A generic WRDS data loader that loads and assembles SAS data into xarray Datasets.
+    
+    This class provides the foundation for all WRDS data loaders, handling the common
+    tasks of loading SAS files, preprocessing the data, and converting to xarray format.
+    Specific WRDS data loaders (like CRSP, Compustat) inherit from this class and
+    customize the behavior as needed.
+    
+    Attributes:
+        FREQUENCY (FrequencyType): Default frequency for the data (e.g., DAILY)
+        LOCAL_SRC (str): Path to the SAS file (must be set by subclasses)
     """
 
     # Default frequency; can be overridden in subclasses if needed
@@ -66,9 +84,13 @@ class GenericWRDSDataLoader(BaseDataSource):
 
     def load_data(self, **config) -> xr.Dataset:
         """
-        Load the primary SAS table and then apply postprocessing operations
-        as defined by the configuration.
-
+        Load the primary SAS table and apply post-processing operations.
+        
+        This method orchestrates the data loading process:
+        1. Loads the raw data from the SAS file
+        2. Preprocess the data (column name normalization, date conversion, etc.)
+        3. Converts to xarray Dataset with proper dimensions
+        
         Standard configuration keys include:
           - num_processes: number of processes to use (default 16)
           - frequency: "D", "W", "M", "Y", etc.
@@ -103,8 +125,11 @@ class GenericWRDSDataLoader(BaseDataSource):
         }
         ```
 
+        Args:
+            **config: Configuration parameters for data loading and processing
+            
         Returns:
-            xr.Dataset: The assembled dataset.
+            xr.Dataset: The assembled dataset
             
         Raises:
             ValueError: If LOCAL_SRC is not defined in the subclass
@@ -129,10 +154,6 @@ class GenericWRDSDataLoader(BaseDataSource):
         # Convert to xarray Dataset
         ds = self._convert_to_xarray(df, data_cols, frequency=freq_enum)
 
-        # Ensure the dataset is sliced by the requested date range.
-        # Not done here due to performance issues with large datasets
-        # ds = self.subset_by_date(ds, config)
-
         return ds
 
     def _load_local(
@@ -142,15 +163,19 @@ class GenericWRDSDataLoader(BaseDataSource):
         **config
     ) -> pd.DataFrame:
         """
-        Loads data from LOCAL_SRC using pyreadstat with optional multiprocessing.
+        Load data from LOCAL_SRC using pyreadstat with multiprocessing.
+        
+        Creates a clean multiprocessing context to ensure thread safety when
+        loading SAS files, which is especially important when working with
+        JAX-enabled environments.
 
         Args:
-            num_processes: Number of processes for pyreadstat.
-            columns_to_read: Subset of columns to read.
-            **config: Additional keyword arguments.
+            num_processes: Number of processes for pyreadstat
+            columns_to_read: Subset of columns to read
+            **config: Additional keyword arguments
 
         Returns:
-            pd.DataFrame: The raw loaded data.
+            The raw loaded data as a DataFrame
             
         Raises:
             ValueError: If LOCAL_SRC is not defined
@@ -176,21 +201,28 @@ class GenericWRDSDataLoader(BaseDataSource):
         **config
     ) -> pd.DataFrame:
         """
-        A 'generic' preprocessing step that child classes can call or override.
-
-        lower-case columns, reset index, convert date column,
-        rename identifier column, apply filters, and sort.
+        Preprocess the raw DataFrame for standardization and cleanup.
+        
+        This method performs standard data preprocessing steps:
+        1. Normalizes column names to lowercase
+        2. Converts date columns to proper datetime format
+        3. Renames identifier columns for consistency
+        4. Applies filters to subset the data
+        5. Sorts and resets the index
+        
+        Subclasses can override or extend this method to implement
+        data source-specific preprocessing.
 
         Args:
-            df: The initial, raw DataFrame.
-            date_col: Name of the SAS date column (e.g., 'date', 'datadate').
-            identifier_col: Name of the entity column (e.g., 'permno', 'gvkey').
+            df: The initial, raw DataFrame
+            date_col: Name of the SAS date column (e.g., 'date', 'datadate')
+            identifier_col: Name of the entity column (e.g., 'permno', 'gvkey')
             filters: Django-style filters (e.g., {"column__gte": value})
             filters_config: Explicit filter configurations (for advanced cases)
-            **config: Additional keyword arguments.
+            **config: Additional keyword arguments
 
         Returns:
-            pd.DataFrame: The cleaned/preprocessed DataFrame.
+            The cleaned/preprocessed DataFrame
         """            
         if df.empty:
             return df
@@ -224,13 +256,16 @@ class GenericWRDSDataLoader(BaseDataSource):
     def convert_sas_date(sas_date_col: pd.Series, epoch: str = '1960-01-01') -> pd.Series:
         """
         Convert a numeric SAS date column to a proper Pandas datetime.
+        
+        SAS dates are stored as number of days since the SAS epoch (January 1, 1960).
+        This method converts these numeric values to proper datetime objects.
 
         Args:
-            sas_date_col: Column of SAS date ints.
-            epoch: Base epoch for SAS (default '1960-01-01').
+            sas_date_col: Column of SAS date ints
+            epoch: Base epoch for SAS (default '1960-01-01')
 
         Returns:
-            pd.Series: Date column in datetime format.
+            Date column in datetime format
             
         Raises:
             ValueError: If the date conversion fails
@@ -244,14 +279,16 @@ class GenericWRDSDataLoader(BaseDataSource):
     @staticmethod
     def _parse_frequency(freq_str: Optional[str]) -> FrequencyType:
         """
-        Convert a frequency string (e.g. 'D', 'W', 'M', 'Y') to a FrequencyType enum.
-        Defaults to DAILY if freq_str is unrecognized.
+        Convert a frequency string to a FrequencyType enum.
+        
+        Maps common frequency codes (D, W, M, Y) to the corresponding FrequencyType enum value.
+        Defaults to DAILY if the frequency string is unrecognized.
 
         Args:
             freq_str: One of "D", "W", "M", "Y", etc.
 
         Returns:
-            FrequencyType: The corresponding enum value.
+            The corresponding FrequencyType enum value
         """
         # Map the known single-letter codes to FrequencyType
         freq_map = {

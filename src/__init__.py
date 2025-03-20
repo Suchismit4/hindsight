@@ -1,14 +1,30 @@
 """
-src/__init__.py
+Hindsight: Financial Data Analysis Library
 
-This file serves as the initializer for the `src` package in the hindsight project. It is responsible for setting up
-the package-level imports and configurations necessary for the modules within the `src` directory. Any global constants,
-package-wide settings, or important metadata about the package can be defined here.
+Hindsight is a comprehensive library for processing, analyzing, and visualizing 
+financial data from various sources. It provides tools for:
 
-This file ensures that when the `src` package is imported, the necessary components are readily available.
+1. Data loading from multiple sources (WRDS, OpenBB, etc.)
+2. Data transformation and filtering
+3. Advanced time-series analysis
+4. Financial calculations and metrics
+
+The library uses xarray as its primary data structure, which allows for efficient
+handling of multi-dimensional financial data with labeled dimensions.
 """
 
-# Import specific modules or classes from the src package
-from src.data import DataManager
-
+# Version information
 __version__ = "0.0.21a"
+__author__ = "Hindsight Team"
+
+# Core components for public use
+from src.data import DataManager
+from src.data.core import FrequencyType
+from src.data.core.util import TimeSeriesIndex
+
+# Define what is available when using "from src import *"
+__all__ = [
+    'DataManager',
+    'FrequencyType',
+    'TimeSeriesIndex'
+]
