@@ -1,0 +1,106 @@
+# Accounting Characteristics Definitions
+#
+# This file defines accounting-based financial characteristics
+# using a context-free grammar (CFG) that allows for flexible computation
+# of financial ratios and metrics.
+#
+# Each characteristic has:
+# - category: The category of the characteristic (accounting, market, combined)
+# - description: A brief description of what the characteristic measures
+# - formula: Formula in the CFG syntax
+# - unit: Unit of measurement (if applicable)
+# - datatype: The expected data type (float, integer, etc.)
+# - source_dataset: Which dataset this primarily uses (compustat, crsp)
+# - variables: Variables used in the formula and their descriptions
+
+assets:
+  category: accounting
+  description: Total assets from Compustat
+  formula: at
+  unit: USD
+  datatype: float
+  source_dataset: compustat
+  variables:
+    at: Total assets (Compustat item AT)
+
+book_equity:
+  category: accounting
+  description: Book equity calculated as Stockholders' Equity + Deferred Taxes - Preferred Stock
+  formula: seq + coalesce(txditc, 0) - ps
+  unit: USD
+  datatype: float
+  source_dataset: compustat
+  variables:
+    seq: Stockholders' Equity (Compustat item SEQ)
+    txditc: Deferred Taxes and Investment Tax Credit (Compustat item TXDITC)
+    ps: Preferred Stock (defined as a nested expression)
+
+preferred_stock:
+  category: accounting
+  description: Preferred stock value, using redemption value if available, liquidation value if not, or carrying value as last resort
+  formula: coalesce(pstkrv, coalesce(pstkl, pstk))
+  unit: USD
+  datatype: float
+  source_dataset: compustat
+  variables:
+    pstkrv: Preferred Stock - Redemption Value (Compustat item PSTKRV)
+    pstkl: Preferred Stock - Liquidation Value (Compustat item PSTKL)
+    pstk: Preferred Stock - Carrying Value (Compustat item PSTK)
+
+at_gr1:
+  category: accounting
+  description: One-year growth rate in total assets
+  formula: (at / lag(at, 1)) - 1
+  unit: proportion
+  datatype: float
+  source_dataset: compustat
+  variables:
+    at: Total assets (Compustat item AT)
+    lag: Function to get the value from n periods ago
+
+sales:
+  category: accounting
+  description: Total revenue/sales
+  formula: coalesce(sale, revt)
+  unit: USD
+  datatype: float
+  source_dataset: compustat
+  variables:
+    sale: Sales/Revenue (Compustat item SALE)
+    revt: Revenue - Total (Compustat item REVT)
+
+ni_be:
+  category: accounting
+  description: Return on equity (Net Income / Book Equity)
+  formula: ni / book_equity
+  unit: proportion
+  datatype: float
+  source_dataset: compustat
+  variables:
+    ni: Net Income (Compustat item NI)
+    book_equity: Book Equity (calculated characteristic)
+
+debt_bev:
+  category: accounting
+  description: Ratio of total debt to book enterprise value
+  formula: (dltt + dlc) / (at - lt + book_equity)
+  unit: proportion
+  datatype: float
+  source_dataset: compustat
+  variables:
+    dltt: Long-Term Debt - Total (Compustat item DLTT)
+    dlc: Debt in Current Liabilities (Compustat item DLC)
+    at: Total assets (Compustat item AT)
+    lt: Total Liabilities (Compustat item LT)
+    book_equity: Book Equity (calculated characteristic)
+
+ebitda_at:
+  category: accounting
+  description: EBITDA divided by Total Assets
+  formula: ebitda / at
+  unit: proportion
+  datatype: float
+  source_dataset: compustat
+  variables:
+    ebitda: Earnings Before Interest, Taxes, Depreciation and Amortization (Compustat item EBITDA or calculated as ebit + dp)
+    at: Total assets (Compustat item AT) 

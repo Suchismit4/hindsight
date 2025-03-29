@@ -1,0 +1,144 @@
+# Combined Characteristics Definitions
+#
+# This file defines characteristics that require both accounting and market data
+# using a context-free grammar (CFG) that allows for flexible computation
+# of financial ratios and metrics.
+#
+# Each characteristic has:
+# - category: The category of the characteristic (accounting, market, combined)
+# - description: A brief description of what the characteristic measures
+# - formula: Formula in the CFG syntax
+# - unit: Unit of measurement (if applicable)
+# - datatype: The expected data type (float, integer, etc.)
+# - source_dataset: Which dataset this primarily uses (compustat, crsp, both)
+# - variables: Variables used in the formula and their descriptions
+
+be_me:
+  category: combined
+  description: Book-to-Market Equity ratio
+  formula: book_equity / market_equity
+  unit: proportion
+  datatype: float
+  source_dataset: both
+  variables:
+    book_equity: Book Equity (calculated characteristic)
+    market_equity: Market Equity (calculated characteristic)
+
+at_me:
+  category: combined
+  description: Assets-to-Market Equity ratio
+  formula: at / market_equity
+  unit: proportion
+  datatype: float
+  source_dataset: both
+  variables:
+    at: Total Assets (Compustat item AT)
+    market_equity: Market Equity (calculated characteristic)
+
+cash_me:
+  category: combined
+  description: Cash-to-Market Equity ratio
+  formula: che / market_equity
+  unit: proportion
+  datatype: float
+  source_dataset: both
+  variables:
+    che: Cash and Short-Term Investments (Compustat item CHE)
+    market_equity: Market Equity (calculated characteristic)
+
+qmj:
+  category: combined
+  description: Quality Minus Junk score
+  formula: (qmj_prof + qmj_growth + qmj_safety) / 3
+  unit: score
+  datatype: float
+  source_dataset: both
+  variables:
+    qmj_prof: QMJ Profitability component
+    qmj_growth: QMJ Growth component
+    qmj_safety: QMJ Safety component
+
+qmj_prof:
+  category: combined
+  description: QMJ Profitability component
+  formula: rank(gp_at) + rank(ni_be) + rank(ocf_at) + rank(gp_sale)
+  unit: score
+  datatype: float
+  source_dataset: both
+  variables:
+    gp_at: Gross Profits to Assets
+    ni_be: Return on Equity
+    ocf_at: Operating Cash Flow to Assets
+    gp_sale: Gross Profit Margin
+    rank: Function to compute cross-sectional percentile rank
+
+qmj_growth:
+  category: combined
+  description: QMJ Growth component
+  formula: rank(gp_at_gr5) + rank(ni_be_gr5) + rank(ocf_at_gr5) - rank(gp_sale_gr5)
+  unit: score
+  datatype: float
+  source_dataset: both
+  variables:
+    gp_at_gr5: 5-year growth in Gross Profits to Assets
+    ni_be_gr5: 5-year growth in Return on Equity
+    ocf_at_gr5: 5-year growth in Operating Cash Flow to Assets
+    gp_sale_gr5: 5-year growth in Gross Profit Margin
+    rank: Function to compute cross-sectional percentile rank
+
+qmj_safety:
+  category: combined
+  description: QMJ Safety component
+  formula: rank(-1 * beta_60m) + rank(-1 * ivol_capm_60m) + rank(-1 * debt_at) + rank(-1 * o_score)
+  unit: score
+  datatype: float
+  source_dataset: both
+  variables:
+    beta_60m: CAPM Beta (60-month)
+    ivol_capm_60m: Idiosyncratic Volatility (60-month)
+    debt_at: Debt to Assets ratio
+    o_score: Ohlson's O-Score (probability of bankruptcy)
+    rank: Function to compute cross-sectional percentile rank
+
+resff3_12_1:
+  category: combined
+  description: Residual momentum based on 12-month returns with 1-month gap from Fama-French 3-factor model
+  formula: residual(regress(ret, [mktrf, smb, hml], window=12, skip=1))
+  unit: proportion
+  datatype: float
+  source_dataset: both
+  variables:
+    ret: Monthly return
+    mktrf: Market excess return
+    smb: Small Minus Big factor return
+    hml: High Minus Low factor return
+    regress: Function to run regression
+    residual: Function to get regression residuals
+
+f_score:
+  category: combined
+  description: Piotroski's F-Score (financial health)
+  formula: >
+    (ni > 0 ? 1 : 0) + 
+    (ocf > 0 ? 1 : 0) + 
+    (ni / at > lag(ni / at, 1) ? 1 : 0) + 
+    (ocf > ni ? 1 : 0) + 
+    (dltt / at < lag(dltt / at, 1) ? 1 : 0) + 
+    (act / lct > lag(act / lct, 1) ? 1 : 0) + 
+    (eq_issue == 0 ? 1 : 0) + 
+    (gp / at > lag(gp / at, 1) ? 1 : 0) + 
+    (sale / at > lag(sale / at, 1) ? 1 : 0)
+  unit: score
+  datatype: integer
+  source_dataset: both
+  variables:
+    ni: Net Income
+    ocf: Operating Cash Flow
+    at: Total Assets
+    dltt: Long-Term Debt
+    act: Current Assets
+    lct: Current Liabilities
+    eq_issue: Dummy for equity issuance
+    gp: Gross Profit
+    sale: Sales/Revenue
+    lag: Function to get the value from n periods ago 

@@ -2,8 +2,7 @@
 # ----------------------------------------
 # This script demonstrates how to compute and plot the rolling Exponential Moving Average (EMA)
 # for Apple's (AAPL) and Tesla's (TSLA) closing stock prices using data from CRSP.
-# The script uses the DataManager to fetch historical price data, applies a rolling window EMA,
-# and visualizes both the original closing prices and the EMA for each asset.
+# The script calculates multiple EMAs with different window sizes and compares them.
 # ----------------------------------------
 
 from src import DataManager
@@ -13,8 +12,8 @@ import time
 
 def main():
     """
-    Main function to fetch historical stock data, compute rolling EMA,
-    and plot the original closing prices alongside the EMA for AAPL and TSLA.
+    Main function to fetch historical stock data, compute rolling EMAs with different window sizes,
+    and plot the original closing prices alongside the EMAs for AAPL and TSLA.
     """
     # Initialize the DataManager to handle dataset operations
     dm = DataManager()
@@ -25,7 +24,7 @@ def main():
         "config": {
             "start_date": "2000-01-01",
             "end_date": "2024-01-01",
-            "freq": "M",
+            "freq": "D",
             "filters": {
                 "date__gte": "2000-01-01"
             },
@@ -56,97 +55,127 @@ def main():
             }
         }}])
 
+
     
     # Extract the original dataset for historical prices.
     dataset = datasets["wrds/equity/crsp"]
     dataset["adj_prc"] = dataset["prc"] / dataset["cfacpr"]
     
-    # Compute the rolling Exponential Moving Average (EMA) of the "close" price over a 30-day window.
-    # This is a simple moving average of the last 30 days.
+    # Window sizes for EMAs (in trading days)
+    window_sizes = [30, 60, 252]  # 30 days, 60 days, 252 days (roughly 1 trading year)
     
-    start = time.time()
-    ema_dataset = dataset.dt.rolling(dim='time', window=30).reduce(mean)
-    print(f"It took {time.time() - start} seconds to compute the EMA.")
+    # Compute EMAs for different window sizes and track computation time
+    ema_datasets = {}
+    for window in window_sizes:
+        print(f"Computing {window}-day EMA...")
+        start_time = time.time()
+        ema_datasets[window] = dataset.dt.rolling(dim='time', window=window).reduce(ema)
+        elapsed = time.time() - start_time
+        print(f"Computed {window}-day EMA in {elapsed:.2f} seconds")
     
-    # Convert the xarray datasets to time-indexed Pandas DataFrames for easier plotting.
+    # Convert the xarray datasets to time-indexed form for easier plotting
     # --- Original closing prices ---
     apple_orig = dataset.sel(asset=14593).dt.to_time_indexed()
-    tsla_orig  = dataset.sel(asset=93436.).dt.to_time_indexed()
+    tsla_orig = dataset.sel(asset=93436.).dt.to_time_indexed()
     
-    # --- EMA-rolled closing prices ---
-    apple_ema = ema_dataset.sel(asset=14593).dt.to_time_indexed()
-    tsla_ema  = ema_dataset.sel(asset=93436.).dt.to_time_indexed()
+    # --- EMA-rolled closing prices for different window sizes ---
+    apple_emas = {window: ema_datasets[window].sel(asset=14593).dt.to_time_indexed() for window in window_sizes}
+    tsla_emas = {window: ema_datasets[window].sel(asset=93436.).dt.to_time_indexed() for window in window_sizes}
     
-    # --- Extract the closing prices and returns from the original and EMA datasets ---
-    apple_close_orig = apple_orig["adj_prc"]
-    tsla_close_orig = tsla_orig["adj_prc"]
-    apple_close_orig_returns = apple_orig["ret"]
-    tsla_close_orig_returns = tsla_orig["ret"]
-
-    apple_close_ema = apple_ema["adj_prc"]
-    tsla_close_ema = tsla_ema["adj_prc"]
-    apple_close_ema_returns = apple_ema["ret"] 
-    tsla_close_ema_returns = tsla_ema["ret"]   
+    # --- Create subplots for the closing prices and EMAs ---
+    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(12, 10))
     
-    # --- Create subplots for the closing prices and EMA ---
-    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))
-
     # --- Apple subplot ---
-    # Plot original closing prices and EMA for AAPL on the first subplot.
-    apple_close_orig.plot.line(x="time", ax=ax1, label="AAPL Close", color="blue", linestyle="-")
-    apple_close_ema.plot.line(x="time", ax=ax1, label="AAPL EMA", color="blue", linestyle="--")
-    ax1.set_title("Apple (AAPL) Closing Prices vs. EMA")
+    # Plot original closing prices and EMAs for AAPL
+    apple_orig["adj_prc"].plot.line(x="time", ax=ax1, label="AAPL Close", color="blue", linestyle="-")
+    
+    colors = ["darkblue", "royalblue", "lightblue"]
+    for i, window in enumerate(window_sizes):
+        apple_emas[window]["adj_prc"].plot.line(
+            x="time", 
+            ax=ax1, 
+            label=f"AAPL {window}-day EMA", 
+            color=colors[i], 
+            linestyle="--"
+        )
+    
+    ax1.set_title("Apple (AAPL) Closing Prices vs. EMAs")
     ax1.set_xlabel("Time")
     ax1.set_ylabel("Price (USD)")
     ax1.legend()
-
+    
     # --- Tesla subplot ---
-    # Plot original closing prices and EMA for TSLA on the second subplot.
-    tsla_close_orig.plot.line(x="time", ax=ax2, label="TSLA Close", color="red", linestyle="-")
-    tsla_close_ema.plot.line(x="time", ax=ax2, label="TSLA EMA", color="red", linestyle="--")
-    ax2.set_title("Tesla (TSLA) Closing Prices vs. EMA")
+    # Plot original closing prices and EMAs for TSLA
+    tsla_orig["adj_prc"].plot.line(x="time", ax=ax2, label="TSLA Close", color="red", linestyle="-")
+    
+    colors = ["darkred", "red", "salmon"]
+    for i, window in enumerate(window_sizes):
+        tsla_emas[window]["adj_prc"].plot.line(
+            x="time", 
+            ax=ax2, 
+            label=f"TSLA {window}-day EMA", 
+            color=colors[i], 
+            linestyle="--"
+        )
+    
+    ax2.set_title("Tesla (TSLA) Closing Prices vs. EMAs")
     ax2.set_xlabel("Time")
     ax2.set_ylabel("Price (USD)")
     ax2.legend()
-
-    # Adjust layout for better spacing between subplots.
+    
+    # Adjust layout for better spacing between subplots
     plt.tight_layout()
-
-    # Save the closing prices figure to a file.
-    plt.savefig("apple_tsla_ema.png")
+    
+    # Save the figure
+    plt.savefig("apple_tsla_multiple_emas.png")
     plt.close()
-
-
-    # --- Create a new figure for plotting returns ---
-    fig, (ax3, ax4) = plt.subplots(nrows=2, ncols=1, figsize=(10, 8))
-
+    
+    # --- Create a figure for returns ---
+    fig, (ax3, ax4) = plt.subplots(nrows=2, ncols=1, figsize=(12, 10))
+    
     # --- Apple returns subplot ---
-    # Plot original returns and (if applicable) EMA returns for AAPL.
-    apple_close_orig_returns.plot.line(x="time", ax=ax3, label="AAPL Returns", color="blue", linestyle="-", alpha=0.15)
-    apple_close_ema_returns.plot.line(x="time", ax=ax3, label="AAPL EMA Returns", color="blue", linestyle="--")
-    # Add a horizontal line at 0 to indicate zero returns.
+    apple_orig["ret"].plot.line(x="time", ax=ax3, label="AAPL Returns", color="blue", linestyle="-", alpha=0.15)
+    
+    colors = ["darkblue", "royalblue", "lightblue"]
+    for i, window in enumerate(window_sizes):
+        apple_emas[window]["ret"].plot.line(
+            x="time", 
+            ax=ax3, 
+            label=f"AAPL {window}-day EMA Returns", 
+            color=colors[i], 
+            linestyle="--"
+        )
+    
     ax3.axhline(y=0, color="black", linewidth=1)
     ax3.set_title("Apple (AAPL) Returns vs. EMA Returns")
     ax3.set_xlabel("Time")
     ax3.set_ylabel("Returns")
     ax3.legend()
-
+    
     # --- Tesla returns subplot ---
-    # Plot original returns and (if applicable) EMA returns for TSLA.
-    tsla_close_orig_returns.plot.line(x="time", ax=ax4, label="TSLA Returns", color="red", linestyle="-", alpha=0.15)
-    tsla_close_ema_returns.plot.line(x="time", ax=ax4, label="TSLA EMA Returns", color="red", linestyle="--")
-    # Add a horizontal line at 0 to indicate zero returns.
+    tsla_orig["ret"].plot.line(x="time", ax=ax4, label="TSLA Returns", color="red", linestyle="-", alpha=0.15)
+    
+    colors = ["darkred", "red", "salmon"]
+    for i, window in enumerate(window_sizes):
+        tsla_emas[window]["ret"].plot.line(
+            x="time", 
+            ax=ax4, 
+            label=f"TSLA {window}-day EMA Returns", 
+            color=colors[i], 
+            linestyle="--"
+        )
+    
     ax4.axhline(y=0, color="black", linewidth=1)
     ax4.set_title("Tesla (TSLA) Returns vs. EMA Returns")
     ax4.set_xlabel("Time")
     ax4.set_ylabel("Returns")
     ax4.legend()
-
-    # Adjust layout for better spacing between subplots.
+    
+    # Adjust layout for better spacing between subplots
     plt.tight_layout()
-
-    # Save the returns figure to a file.
-    plt.savefig("apple_tsla_returns.png")
+    
+    # Save the returns figure
+    plt.savefig("apple_tsla_multiple_ema_returns.png")
     plt.close()
 
 if __name__ == "__main__":

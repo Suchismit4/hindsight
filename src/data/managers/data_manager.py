@@ -9,12 +9,50 @@ data providers, handles caching, and manages the configuration of data requests.
 import xarray as xr
 import xarray_jax
 import yaml
-from typing import Union, List, Dict, Any
+from typing import Union, List, Dict, Any, Optional
 import os
 
 from src.data.core.provider import _PROVIDER_REGISTRY
 from src.data.loaders import *
 from src.data.core.cache import CacheManager
+
+class CharacteristicsManager:
+    """
+    Manager for computing and caching financial characteristics.
+    
+    This class computes financial characteristics similar to the ones in the
+    GlobalFactors codebase. It serves as a higher-level cache (L3) on top of
+    the raw data cache.
+    
+    Attributes:
+        cache_manager: Reference to the cache manager for storing computed characteristics
+    """
+    
+    def __init__(self, cache_manager: CacheManager):
+        """
+        Initialize the CharacteristicsManager.
+        
+        Args:
+            cache_manager: The cache manager to use for caching computed characteristics
+        """
+        self.cache_manager = cache_manager
+        
+    def compute_characteristics(self, data: Dict[str, xr.Dataset], config: Dict[str, Any]) -> Dict[str, xr.Dataset]:
+        """
+        Compute financial characteristics based on the input data and configuration.
+        
+        Args:
+            data: Dictionary of raw datasets from different sources
+            config: Configuration specifying which characteristics to compute
+            
+        Returns:
+            Dictionary of datasets with computed characteristics
+            
+        Raises:
+            NotImplementedError: This method is not yet implemented
+        """
+        # This will be implemented later to compute characteristics from the GlobalFactors codebase
+        raise NotImplementedError("Characteristics computation is not yet implemented")
 
 class DataManager:
     """
@@ -28,6 +66,7 @@ class DataManager:
     Attributes:
         cache_manager: Manager for the two-level caching system
         _data_loaders: Dictionary mapping data paths to their respective loaders
+        characteristics_manager: Manager for computing and caching financial characteristics
     """
     
     def __init__(self):
@@ -43,12 +82,16 @@ class DataManager:
         # Collect data loaders from all registered providers
         for provider in _PROVIDER_REGISTRY.values():
             self._data_loaders.update(provider.data_loaders)
+            
+        # Initialize the characteristics manager
+        self.characteristics_manager = CharacteristicsManager(self.cache_manager)
 
-    def get_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> Dict[str, xr.Dataset]:
+    def _get_raw_data(self, data_requests: Union[List[Dict[str, Any]], str]) -> Dict[str, xr.Dataset]:
         """
-        Retrieve data based on specified configurations.
+        Retrieve raw data based on specified configurations.
         
-        This method supports two ways of specifying data requests:
+        This is an internal method that provides lower-level access to raw financial data.
+        It supports two ways of specifying data requests:
         1. A list of request dictionaries with data_path and config keys
         2. A path to a YAML configuration file containing the request list
         
@@ -113,6 +156,66 @@ class DataManager:
             collected_data[data_path] = data
 
         return collected_data
+    
+    def get_data(self, config: Dict[str, Any]) -> Dict[str, xr.Dataset]:
+        """
+        Retrieve data with computed financial characteristics.
+        
+        This is the main method for accessing financial data with computed characteristics.
+        The config parameter specifies both the raw data to retrieve and the characteristics
+        to compute from that data.
+        
+        Args:
+            config: Configuration specifying data sources and characteristics
+                
+                Example config:
+                {
+                    "data_sources": [
+                        {
+                            "data_path": "wrds/equity/crsp",
+                            "config": {
+                                "start_date": "2000-01-01",
+                                "end_date": "2024-01-01",
+                                "freq": "M"
+                            }
+                        },
+                        {
+                            "data_path": "wrds/equity/compustat",
+                            "config": {
+                                "start_date": "2000-01-01",
+                                "end_date": "2024-01-01",
+                                "freq": "Y"
+                            }
+                        }
+                    ],
+                    "characteristics": {
+                        "accounting": ["assets", "sales", "book_equity", "debt_gr1"],
+                        "market": ["ret_1_0", "ret_12_1", "chcsho_12m", "eqnpo_12m"]
+                    }
+                }
+                
+        Returns:
+            Dictionary mapping data paths to their corresponding xarray Datasets with 
+            computed characteristics
+            
+        Raises:
+            NotImplementedError: Characteristics computation is not yet implemented
+        """
+        # Get the raw data first
+        data_sources = config.get("data_sources", [])
+        raw_data = self._get_raw_data(data_sources)
+        
+        # If no characteristics are requested, just return the raw data
+        if "characteristics" not in config:
+            return raw_data
+        
+        # Compute and return characteristics
+        try:
+            return self.characteristics_manager.compute_characteristics(raw_data, config)
+        except NotImplementedError:
+            # For now, just return the raw data with a warning
+            print("WARNING: Characteristics computation is not yet implemented. Returning raw data.")
+            return raw_data
     
     def get_available_data_paths(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -182,3 +285,21 @@ class DataManager:
                 }
         
         return results
+    
+    def get_available_characteristics(self) -> Dict[str, List[str]]:
+        """
+        Get information about all available financial characteristics.
+        
+        Returns:
+            Dictionary mapping characteristic categories to lists of characteristics:
+            {
+                "accounting": ["assets", "sales", "book_equity", ...],
+                "market": ["ret_1_0", "ret_12_1", "chcsho_12m", ...],
+                ...
+            }
+        """
+        # This will be implemented later when the characteristics computation is implemented
+        return {
+            "accounting": [],
+            "market": []
+        }
