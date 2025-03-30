@@ -96,7 +96,6 @@ class TimeSeriesOps(eqx.Module):
         data = jnp.nan_to_num(data)
         
         # Helper method to prepare blocks of data for u_roll
-        @eqx.filter_jit
         def _prepare_blocks(
             data: jnp.ndarray,
             window_size: int,
@@ -212,4 +211,4 @@ class TimeSeriesOps(eqx.Module):
 # Standard rolling functions
 
 # TODO: Create a factory possibly?
-from .standard import mean, mode, ema, median
+from .standard import mean, mode, ema, median, gain, loss, sum_func

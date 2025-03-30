@@ -30,17 +30,16 @@ Examples:
     Array(6., dtype=float32)
 """
 
-import functools
 import inspect
 from typing import Dict, Any, Callable, List, Union, Optional, TypeVar, cast, overload
 import xarray as xr
-import jax
-import jax.numpy as jnp
-import numpy as np
+
 from src.data.core.operations import mean as core_mean
 from src.data.core.operations import ema as core_ema
 from src.data.core.operations import median as core_median
 from src.data.core.operations import mode as core_mode
+from src.data.core.operations import gain as core_gain
+from src.data.core.operations import loss as core_loss
 
 # Type variables for better type hinting
 F = TypeVar('F', bound=Callable[..., Any])
@@ -328,9 +327,7 @@ def coalesce(a, b):
     Returns:
         a if a is not NaN, otherwise b
     """
-    if isinstance(a, (xr.DataArray, xr.Dataset)):
-        return xr.where(xr.ufuncs.isnan(a), b, a)
-    return jnp.where(jnp.isnan(a), b, a)
+    return xr.where(xr.ufuncs.isnan(a), b, a)
 
 @register_function(category="statistical")
 def std(data, dim=None):
@@ -346,9 +343,7 @@ def std(data, dim=None):
     Returns:
         Standard deviation of the data, preserving other dimensions for xarray objects
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.std(dim=dim)
-    return jnp.std(data)
+    return data.std(dim=dim)
 
 @register_function(category="statistical")
 def var(data, dim=None):
@@ -364,9 +359,7 @@ def var(data, dim=None):
     Returns:
         Variance of the data, preserving other dimensions for xarray objects
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.var(dim=dim)
-    return jnp.var(data)
+    return data.var(dim=dim)
 
 @register_function(category="statistical")
 def min(data, dim=None):
@@ -382,9 +375,7 @@ def min(data, dim=None):
     Returns:
         Minimum of the data, preserving other dimensions for xarray objects
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.min(dim=dim)
-    return jnp.min(data)
+    return data.min(dim=dim)
 
 @register_function(category="statistical")
 def max(data, dim=None):
@@ -400,9 +391,7 @@ def max(data, dim=None):
     Returns:
         Maximum of the data, preserving other dimensions for xarray objects
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.max(dim=dim)
-    return jnp.max(data)
+    return data.max(dim=dim)
 
 @register_function(category="arithmetic")
 def sum(data, dim=None):
@@ -418,9 +407,7 @@ def sum(data, dim=None):
     Returns:
         Sum of the data, preserving other dimensions for xarray objects
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.sum(dim=dim)
-    return jnp.sum(data)
+    return data.sum(dim=dim)
 
 @register_function(category="arithmetic")
 def sqrt(x):
@@ -435,9 +422,7 @@ def sqrt(x):
     Returns:
         Square root with same structure as input
     """
-    if isinstance(x, (xr.DataArray, xr.Dataset)):
-        return xr.ufuncs.sqrt(x)
-    return jnp.sqrt(x)
+    return xr.ufuncs.sqrt(x)
 
 @register_function(category="arithmetic")
 def abs(x):
@@ -452,9 +437,7 @@ def abs(x):
     Returns:
         Absolute value with same structure as input
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return abs(x)  # xarray implements abs natively
-    return jnp.abs(x)
+    return xr.ufuncs.abs(x)
 
 @register_function(category="arithmetic")
 def log(x):
@@ -469,9 +452,7 @@ def log(x):
     Returns:
         Natural logarithm with same structure as input
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return xr.ufuncs.log(x)
-    return jnp.log(x)
+    return xr.ufuncs.log(x)
 
 @register_function(category="arithmetic")
 def exp(x):
@@ -486,9 +467,7 @@ def exp(x):
     Returns:
         Exponential with same structure as input
     """
-    if isinstance(x, (xr.DataArray, xr.Dataset)):
-        return xr.ufuncs.exp(x)
-    return jnp.exp(x)
+    return xr.ufuncs.exp(x)
 
 @register_function(category="statistical")
 def mean(data, dim=None):
@@ -508,12 +487,10 @@ def mean(data, dim=None):
         >>> mean(jnp.array([[1, 2], [3, 4]]), dim=0)
         Array([2., 3.], dtype=float32)
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.mean(dim=dim)
-    return jnp.mean(data, axis=dim)
+    return data.mean(dim=dim)
 
 @register_function(category="temporal")
-def moving_mean(data, window):
+def sma(data, window):
     """
     Calculate the moving average along the time dimension.
     
@@ -539,12 +516,10 @@ def moving_mean(data, window):
         >>> # Equivalent to:
         >>> # moving_avg = ds.dt.rolling(dim='time', window=30).reduce(core_mean)
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.dt.rolling(dim='time', window=window).reduce(core_mean)
-    raise ValueError("Input must be an xarray DataArray or Dataset")
+    return data.dt.rolling(dim='time', window=window).reduce(core_mean)
 
 @register_function(category="temporal")
-def moving_ema(data, window):
+def ema(data, window):
     """
     Calculate the exponential moving average along the time dimension.
     
@@ -566,13 +541,67 @@ def moving_ema(data, window):
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> ema_values = moving_ema(ds, 30)  # 30-day EMA
+        >>> ema_values = ema(ds, 30)  # 30-day EMA
         >>> # Equivalent to:
         >>> # ema_values = ds.dt.rolling(dim='time', window=30).reduce(core_ema)
+    """    
+    return data.dt.rolling(dim='time', window=window).reduce(core_ema)
+
+@register_function(category="temporal") 
+def gain(data, window):
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.dt.rolling(dim='time', window=window).reduce(core_ema)
-    raise ValueError("Input must be an xarray DataArray or Dataset")
+    Calculate the gain (positive change) along the time dimension.
+    
+    This function calculates the rolling gain of a dataset over a window
+    of size 'window' along the time dimension.
+    
+    When executed, this function will be processed using:
+        dataset.dt.rolling(dim='time', window=window).reduce(core_gain)
+        
+    Args:
+        data: Input array or dataset
+        window: Size of the rolling window
+        
+    Returns:
+        Dataset with rolling gain values
+
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> gain_values = gain(ds, 30)  # 30-day gain
+        >>> # Equivalent to:
+        >>> # gain_values = ds.dt.rolling(dim='time', window=30).reduce(core_gain)  
+    """
+    return data.dt.rolling(dim='time', window=window).reduce(core_gain)
+
+@register_function(category="temporal") 
+def loss(data, window):
+    """
+    Calculate the loss (negative change) along the time dimension.
+    
+    This function calculates the rolling loss of a dataset over a window
+    of size 'window' along the time dimension.
+    
+    When executed, this function will be processed using:
+        dataset.dt.rolling(dim='time', window=window).reduce(core_loss)
+        
+    Args:
+        data: Input array or dataset
+        window: Size of the rolling window
+        
+    Returns:
+        Dataset with rolling loss values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> loss_values = loss(ds, 30)  # 30-day loss
+        >>> # Equivalent to:
+        >>> # loss_values = ds.dt.rolling(dim='time', window=30).reduce(core_loss)  
+    """
+    return data.dt.rolling(dim='time', window=window).reduce(core_loss)
 
 @register_function(category="temporal")
 def moving_median(data, window):
@@ -600,9 +629,35 @@ def moving_median(data, window):
         >>> # Equivalent to:
         >>> # median_values = ds.dt.rolling(dim='time', window=30).reduce(core_median)
     """
-    if isinstance(data, (xr.DataArray, xr.Dataset)):
-        return data.dt.rolling(dim='time', window=window).reduce(core_median)
-    raise ValueError("Input must be an xarray DataArray or Dataset")
+    return data.dt.rolling(dim='time', window=window).reduce(core_median)
+
+@register_function(category="temporal")
+def moving_mode(data, window):  
+    """
+    Calculate the moving mode along the time dimension.
+    
+    This function calculates the rolling mode of a dataset over a window
+    of size 'window' along the time dimension.
+    
+    When executed, this function will be processed using:
+        dataset.dt.rolling(dim='time', window=window).reduce(core_mode)
+        
+    Args:
+        data: Input array or dataset
+        window: Size of the rolling window
+        
+    Returns:
+        Dataset with rolling mode values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> mode_values = moving_mode(ds, 30)  # 30-day moving mode
+        >>> # Equivalent to:
+        >>> # mode_values = ds.dt.rolling(dim='time', window=30).reduce(core_mode)
+    """
+    return data.dt.rolling(dim='time', window=window).reduce(core_mode) 
 
 def register_built_in_functions():
     """Register built-in functions for common operations."""

@@ -134,7 +134,7 @@ def mode(i: int, carry, block: jnp.ndarray, window_size: int):
 
 # Example for extended standard operations:
 
-# Define a function to compute Exponential Moving Average (EMA)
+# A function to compute Exponential Moving Average (EMA)
 # This function will be used with the u_roll method for efficient computation
 @partial(jax.jit, static_argnames=['window_size'])
 def ema(i: int, carry, block: jnp.ndarray, window_size: int):
@@ -175,3 +175,66 @@ def ema(i: int, carry, block: jnp.ndarray, window_size: int):
     new_ema = alpha * current_price + (1 - alpha) * carry
     
     return (new_ema, new_ema)
+
+@partial(jax.jit, static_argnames=['window_size'])
+def gain(i: int, carry, block: jnp.ndarray, window_size: int):
+    """
+    Compute the gain (positive change) from the previous time step.
+
+    Gain is defined as max(current_value - previous_value, 0).
+    This function follows the signature required by TimeSeriesOps.u_roll.
+
+    Args:
+        i (int): Current index in the block (ignored after initialization check).
+        carry: State carried over (ignored, calculation is stateless).
+        block (jnp.ndarray): The data block, shape (T_block, N_assets, 1).
+        window_size (int): Size of the moving window (ignored).
+
+    Returns:
+        tuple: (current_gain, None) where:
+            - current_gain has shape (N_assets, 1), representing the gain at step `i`.
+            - Carry is 1.
+    """
+    if carry is None:
+        # Initialize gain as zero for the first step.
+        initial_gain = jnp.zeros((block.shape[1], block.shape[2]), dtype=block.dtype)
+        return initial_gain, None # Return initial zero gain, no carry needed
+
+    # Calculate gain: max(current - previous, 0)
+    # i is the end index of the conceptual window for u_roll's func call pattern.
+    # block[i] is the current value, block[i-1] is the previous.
+    # u_roll calls func starting from i = window_size, up to t-1.
+    # So i >= 1 is guaranteed when this part runs.
+    current_gain = jnp.maximum(block[i] - block[i - 1], 0)
+    return current_gain, 1 # Return current gain, no carry needed
+
+# TODO: Window_size is not used in the loss function. This might differ from actually how loss is computed. 
+@partial(jax.jit, static_argnames=['window_size'])
+def loss(i: int, carry, block: jnp.ndarray, window_size: int):
+    """
+    Compute the loss (magnitude of negative change) from the previous time step.
+
+    Loss is defined as max(previous_value - current_value, 0).
+    This function follows the signature required by TimeSeriesOps.u_roll.
+
+    Args:
+        i (int): Current index in the block (ignored after initialization check).
+        carry: State carried over (ignored, calculation is stateless).
+        block (jnp.ndarray): The data block, shape (T_block, N_assets, 1).
+        window_size (int): Size of the moving window (ignored).
+
+    Returns:
+        tuple: (current_loss, None) where:
+            - current_loss has shape (N_assets, 1), representing the loss at step `i`.
+            - Carry is 1.
+    """
+    if carry is None:
+        # Initialize loss as zero for the first step.
+        initial_loss = jnp.zeros((block.shape[1], block.shape[2]), dtype=block.dtype)
+        return initial_loss, None # Return initial zero loss, no carry needed
+
+    # Calculate loss: max(previous - current, 0)
+    # See comment in gain() regarding index i.
+    current_loss = jnp.maximum(block[i - 1] - block[i], 0)
+    return current_loss, 1 # Return current loss, no carry needed
+

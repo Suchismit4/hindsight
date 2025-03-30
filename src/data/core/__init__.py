@@ -11,7 +11,7 @@ data layer, including:
 """
 
 from .struct import DatasetDateTimeAccessor
-from .util import FrequencyType, TimeSeriesIndex, Loader, Rolling
+from .util import FrequencyType, TimeSeriesIndex, Loader, Rolling, prepare_for_jit, restore_from_jit
 from .operations import TimeSeriesOps
 from .cache import CacheManager
 from .provider import Provider, register_provider, get_provider
@@ -27,6 +27,8 @@ __all__ = [
     # Operations and utilities
     'TimeSeriesOps',
     'Loader',
+    'prepare_for_jit',
+    'restore_from_jit',
     
     # Infrastructure components
     'CacheManager',

@@ -440,6 +440,7 @@ class FunctionCall(Node):
     def evaluate(self, context: Dict[str, Any]) -> Union[jnp.ndarray, xr.DataArray, xr.Dataset]:
         """
         Evaluate the function call by evaluating the arguments and calling the function.
+        Passes the value of Literal nodes directly as Python scalars.
         
         Args:
             context: Dictionary mapping variable names to their values and
@@ -458,14 +459,28 @@ class FunctionCall(Node):
         # Get the function from the context
         func = context[func_key]
         
-        # Evaluate the arguments
-        arg_values = [arg.evaluate(context) for arg in self.args]
-        
-        # Call the function with the evaluated arguments
+        # Evaluate arguments, but pass Literal values directly
+        processed_args = []
+        for arg_node in self.args:  # Iterate through the argument *nodes*
+            if isinstance(arg_node, Literal):
+                # If it's a Literal node, use its Python value directly.
+                # Ensure it's int if it represents an integer.
+                val = arg_node.value
+                if val == int(val):
+                    processed_args.append(int(val))
+                else:
+                    processed_args.append(val)
+            else:
+                # Otherwise, evaluate the node.
+                evaluated_arg = arg_node.evaluate(context)
+                processed_args.append(evaluated_arg)
+
+        # Call the function with the processed arguments
         try:
-            return func(*arg_values)
+            return func(*processed_args)
         except Exception as e:
-            # Add more context to the error message
+            arg_types = [type(a) for a in processed_args]
+            print(f"Error calling {self.name} with arg types: {arg_types}")
             raise ValueError(f"Error calling function '{self.name}': {str(e)}")
     
     def get_variables(self) -> Set[str]:

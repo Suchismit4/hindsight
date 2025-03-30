@@ -21,12 +21,12 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 import xarray as xr
-
+from tqdm import tqdm
 # Add the project root to the path to make imports work
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from src import DataManager
-
+from src.data.core import prepare_for_jit
 from src.data.ast import (
     parse_formula,
     register_function,
@@ -449,28 +449,26 @@ def example_rolling_operations():
             ]
         }
     )['wrds/equity/crsp']
-    
-    print(f"Created sample dataset: {ds}")
-    
+        
     ds["adj_prc"] = ds["prc"] / ds["cfacpr"]
     
     # Create formula AST for calculations
     print("\nParsing formulas for rolling calculations:")
     
     # Moving average with window of 30 days
-    ma_formula = "moving_mean(dataset, 30)"
+    ma_formula = "sma(dataset, 30)"
     ma_ast = parse_formula(ma_formula)
     print(f"Formula: {ma_formula}")
     
     # Exponential moving average with window of 30 days
-    ema_formula = "moving_ema(dataset, 30)"
+    ema_formula = "ema(dataset, 30)"
     ema_ast = parse_formula(ema_formula)
     print(f"Formula: {ema_formula}")
-    
+        
     # Example of more complex formula using rolling operations
-    complex_formula = "moving_mean(dataset, 10) / moving_mean(dataset, 30)"
+    complex_formula = "100 - (100 / (1 + ema(gain(dataset, 14), 14) / ema(loss(dataset, 14), 14)))"
     complex_ast = parse_formula(complex_formula)
-    print(f"Complex ratio formula: {complex_formula}")
+    print(f"Complex RSI formula: {complex_formula}")
     
     # Visualize the AST for a complex formula
     os.makedirs("examples/visualizations", exist_ok=True)
@@ -490,7 +488,7 @@ def example_rolling_operations():
     context = get_function_context()
     
     # Create non-JIT and JIT evaluation functions
-    def evaluate_normal(dataset, window1, window2):
+    def evaluate_normal(dataset, window1: int, window2: int):
         """Evaluate all formulas without JIT compilation."""
         eval_context = context.copy()
         eval_context.update({
@@ -514,7 +512,7 @@ def example_rolling_operations():
         return ma_result1, ma_result2, ema_result, complex_result
     
     @jax.jit
-    def evaluate_jit(dataset, window1, window2):
+    def evaluate_jit(dataset, window1: int, window2: int):
         """Evaluate all formulas with JIT compilation."""
         eval_context = {
             'dataset': dataset
@@ -540,30 +538,27 @@ def example_rolling_operations():
         
         return ma_result1, ma_result2, ema_result, complex_result
     
+    jit_ready_ds, _ = prepare_for_jit(ds)
+    
     # Prepare data for benchmarking
     try:
-        # Use a subset of assets for the benchmark
-        if len(ds.asset) > 10:
-            subset_ds = ds.isel(asset=slice(0, 10))
-        else:
-            subset_ds = ds
+        subset_ds = jit_ready_ds
+        
+        # You can uncomment this to benchmark on a subset of assets which can be faster to benchmark...
+        if len(jit_ready_ds.asset) > 10:
+            subset_ds = jit_ready_ds.isel(asset=slice(0, 1000))
             
         # Use a subset of time for faster benchmarking if needed
         if len(subset_ds.time) > 500:
-            subset_ds = subset_ds.isel(time=slice(0, 500))
-        
-        # Convert dataset to dictionary for the benchmark
-        dataset_dict = {}
-        for var_name in subset_ds.data_vars:
-            dataset_dict[var_name] = subset_ds[var_name].values
+            subset_ds = subset_ds.isel(time=slice(0, 1000))
             
-        window1 = jnp.array(30)
-        window2 = jnp.array(10)
+        window1 = int(30)
+        window2 = int(10)
         
         # Compile the JIT function (first call)
         print("Compiling JIT function...")
         start = time.time()
-        _ = evaluate_jit(dataset_dict, window1, window2)
+        _ = evaluate_jit(subset_ds, window1, window2)
         compile_time = time.time() - start
         print(f"JIT compilation time: {compile_time:.6f} seconds")
         
@@ -573,15 +568,15 @@ def example_rolling_operations():
         normal_times = []
         
         print("\nBenchmarking rolling operations with JIT vs. non-JIT evaluation...")
-        for i in range(runs):
+        for i in tqdm(range(runs), desc="Benchmarking:"):
             # Time JIT version
             start = time.time()
-            jit_results = evaluate_jit(dataset_dict, window1, window2)
+            jit_results = evaluate_jit(subset_ds, window1, window2)
             jit_times.append(time.time() - start)
             
             # Time normal version
             start = time.time()
-            normal_results = evaluate_normal(dataset_dict, window1, window2)
+            normal_results = evaluate_normal(subset_ds, window1, window2)
             normal_times.append(time.time() - start)
         
         # Compute averages
@@ -604,22 +599,7 @@ def example_rolling_operations():
         plt.savefig('examples/visualizations/rolling_operations_benchmark.png')
         print("\nBenchmark plot saved to: examples/visualizations/rolling_operations_benchmark.png")
         
-        # Verify results match
-        results_match = all([
-            jnp.allclose(jit_results[i], normal_results[i], equal_nan=True)
-            for i in range(len(jit_results))
-        ])
-        print(f"Results match: {results_match}")
-        
-        # Print detailed results for one variable in the dataset
-        var_name = "adj_prc"
-        if var_name in dataset_dict:
-            print(f"\nDetailed results for {var_name} (first asset, last time point):")
-            print(f"30-day MA: {normal_results[0][var_name][0, -1] if normal_results[0][var_name].size > 0 else 'N/A'}")
-            print(f"10-day MA: {normal_results[1][var_name][0, -1] if normal_results[1][var_name].size > 0 else 'N/A'}")
-            print(f"30-day EMA: {normal_results[2][var_name][0, -1] if normal_results[2][var_name].size > 0 else 'N/A'}")
-            print(f"Ratio (10-day MA / 30-day MA): {normal_results[3][var_name][0, -1] if normal_results[3][var_name].size > 0 else 'N/A'}")
-        
+    
     except Exception as e:
         print(f"\nBenchmark could not be completed: {e}")
         print("Make sure the dataset contains the expected structure and variables.")

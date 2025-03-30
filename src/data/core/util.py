@@ -25,6 +25,64 @@ import pyreadstat
 # Import the core operations
 from src.data.core.operations import TimeSeriesOps
 
+def prepare_for_jit(dataset: xr.Dataset) -> Tuple[xr.Dataset, Dict[str, xr.DataArray]]:
+    """
+    Separates non-numeric data variables from an xarray Dataset to make it JIT-compatible.
+
+    This function identifies DataArrays with non-numeric dtypes (like object or string)
+    and removes them, returning a new Dataset containing only numeric data and a
+    context dictionary holding the removed variables.
+
+    Args:
+        dataset: The input xarray Dataset potentially containing non-numeric DataArrays.
+
+    Returns:
+        A tuple containing:
+            - jit_ready_dataset: A new Dataset containing only numeric DataArrays.
+            - context: A dictionary holding the removed non-numeric DataArrays, keyed by name.
+    """
+    non_numeric_names = [
+        name for name, da in dataset.data_vars.items()
+        if not np.issubdtype(da.dtype, np.number)
+    ]
+
+    if not non_numeric_names:
+        # If no non-numeric variables, return the original dataset and empty context
+        return dataset, {}
+
+    # Store the non-numeric variables in the context dictionary
+    context = {name: dataset[name] for name in non_numeric_names}
+
+    # Create the JIT-ready dataset by dropping the non-numeric variables
+    jit_ready_dataset = dataset.drop_vars(non_numeric_names)
+
+    return jit_ready_dataset, context
+
+def restore_from_jit(processed_dataset: xr.Dataset, context: Dict[str, xr.DataArray]) -> xr.Dataset:
+    """
+    Restores non-numeric data variables back into a processed xarray Dataset.
+
+    Args:
+        processed_dataset: The Dataset after JIT computations (should contain numeric vars).
+        context: The dictionary containing the non-numeric DataArrays removed by prepare_for_jit.
+
+    Returns:
+        A new Dataset with the non-numeric data variables merged back in.
+    """
+    # Start with the processed dataset
+    restored_dataset = processed_dataset.copy()
+
+    # Merge the non-numeric variables back from the context
+    restored_dataset = restored_dataset.update(context)
+    # update returns None, need to use merge or assign
+    # restored_dataset = processed_dataset.merge(xr.Dataset(context)) # Alternative using merge
+
+    # A more direct way using assign might be better if coords don't clash
+    restored_dataset = processed_dataset.assign(**context)
+
+
+    return restored_dataset
+
 class FrequencyType(Enum):
     """
     Enumeration of supported data frequencies.
@@ -501,9 +559,10 @@ class Rolling(eqx.Module):
     """
     
     obj:    Union[xr.DataArray, xr.Dataset]
-    dim:    str
-    window: int
+    dim:    str = eqx.field(static=True)
+    window: int = eqx.field(static=True)
     
+    # JAX arrays are leaves by default, no need to mark mask/indices unless they are static data (which they shouldn't be)
     mask: jnp.ndarray 
     indices: jnp.ndarray
     
