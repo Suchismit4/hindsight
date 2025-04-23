@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 import xarray as xr
 import pyreadstat
+import yaml
 
 from src.data.loaders.abstracts.base import BaseDataSource
 from src.data.core.util import FrequencyType
@@ -29,8 +30,14 @@ class GenericWRDSDataLoader(BaseDataSource):
     with different parameters to handle dataset-specific columns and logic.
     """
 
+    CONFIG_PATH = 'wrds.yaml'                       # Path to the config file
+    CONFIG: Dict[str, Any] = {}                     # Configuration dictionary
     LOCAL_SRC: str = ""                             # Path to local SAS file (override in child classes)
     FREQUENCY: FrequencyType = FrequencyType.DAILY  # Default frequency (override in child classes)
+
+    def __init__(self):
+        with open(self.CONFIG_PATH, 'r') as f:
+            self.CONFIG = yaml.safe_load(f)
 
     def load_data(self, **config) -> xr.Dataset:
         """

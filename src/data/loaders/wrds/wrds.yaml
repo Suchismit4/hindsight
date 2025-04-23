@@ -1,0 +1,18 @@
+- crsp
+  frequency:
+    default_freq: "D"
+    paths:
+      D: "dsf.sas7bdat"
+      M: "msf.sas7bdat"
+  additional_data:
+    - path: "/wrds/crsp/sasdata/a_stock/msenames.sas7bdat"
+    - path: "/wrds/crsp/sasdata/a_stock/msedist.sas7bdat"
+    - path: "/wrds/crsp/sasdata/a_stock/msedelist.sas7bdat"
+
+- compustat
+  frequency:
+    default_freq: "Y"
+    paths:
+      Y: "funda.sas7bdat"
+  additional_data:
+    - path: "/wrds/comp/sasdata/d_na/filenamesq.sas7bdat"
