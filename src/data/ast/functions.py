@@ -40,6 +40,7 @@ from src.data.core.operations import median as core_median
 from src.data.core.operations import mode as core_mode
 from src.data.core.operations import gain as core_gain
 from src.data.core.operations import loss as core_loss
+from src.data.core.operations import wma as core_wma
 
 # Type variables for better type hinting
 F = TypeVar('F', bound=Callable[..., Any])
@@ -494,170 +495,471 @@ def sma(data, window):
     """
     Calculate the moving average along the time dimension.
     
-    This function calculates the rolling mean of a dataset over a window
+    This function calculates the rolling mean of a dataset or DataArray over a window
     of size 'window' along the time dimension. It's designed to work with
     the Hindsight data structure and rolling operations.
     
-    When executed, this function will be processed using:
-        dataset.dt.rolling(dim='time', window=window).reduce(core_mean)
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
         
     Args:
         data: Input array or dataset
         window: Size of the rolling window
         
     Returns:
-        Dataset with rolling mean values
+        Dataset or DataArray with rolling mean values
         
     Examples:
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> moving_avg = moving_mean(ds, 30)  # 30-day moving average
-        >>> # Equivalent to:
-        >>> # moving_avg = ds.dt.rolling(dim='time', window=30).reduce(core_mean)
+        >>> # Whole dataset calculation
+        >>> moving_avg = sma(ds, 30)  # 30-day moving average for all variables
+        >>> # Single variable calculation
+        >>> close_avg = sma($close, 30)  # 30-day moving average for just close prices
     """
-    return data.dt.rolling(dim='time', window=window).reduce(core_mean)
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_mean)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_mean)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for sma: {type(data)}")
 
 @register_function(category="temporal")
 def ema(data, window):
     """
     Calculate the exponential moving average along the time dimension.
     
-    This function calculates the rolling EMA of a dataset over a window
+    This function calculates the rolling EMA of a dataset or DataArray over a window
     of size 'window' along the time dimension. It uses an exponential
     weighting scheme.
     
-    When executed, this function will be processed using:
-        dataset.dt.rolling(dim='time', window=window).reduce(core_ema)
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
         
     Args:
         data: Input array or dataset
         window: Size of the rolling window
         
     Returns:
-        Dataset with rolling EMA values
+        Dataset or DataArray with rolling EMA values
         
     Examples:
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> ema_values = ema(ds, 30)  # 30-day EMA
-        >>> # Equivalent to:
-        >>> # ema_values = ds.dt.rolling(dim='time', window=30).reduce(core_ema)
+        >>> # Whole dataset calculation
+        >>> ema_values = ema(ds, 30)  # 30-day EMA for all variables
+        >>> # Single variable calculation
+        >>> close_ema = ema($close, 30)  # 30-day EMA for just close prices
     """    
-    return data.dt.rolling(dim='time', window=window).reduce(core_ema)
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_ema)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_ema)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for ema: {type(data)}")
 
 @register_function(category="temporal") 
 def gain(data, window):
     """
     Calculate the gain (positive change) along the time dimension.
     
-    This function calculates the rolling gain of a dataset over a window
+    This function calculates the rolling gain of a dataset or DataArray over a window
     of size 'window' along the time dimension.
     
-    When executed, this function will be processed using:
-        dataset.dt.rolling(dim='time', window=window).reduce(core_gain)
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
         
     Args:
         data: Input array or dataset
         window: Size of the rolling window
         
     Returns:
-        Dataset with rolling gain values
+        Dataset or DataArray with rolling gain values
 
     Examples:
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> gain_values = gain(ds, 30)  # 30-day gain
-        >>> # Equivalent to:
-        >>> # gain_values = ds.dt.rolling(dim='time', window=30).reduce(core_gain)  
+        >>> # Whole dataset calculation
+        >>> gain_values = gain(ds, 30)  # 30-day gain for all variables
+        >>> # Single variable calculation
+        >>> close_gain = gain($close, 30)  # 30-day gain for just close prices
     """
-    return data.dt.rolling(dim='time', window=window).reduce(core_gain)
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_gain)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_gain)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for gain: {type(data)}")
 
 @register_function(category="temporal") 
 def loss(data, window):
     """
     Calculate the loss (negative change) along the time dimension.
     
-    This function calculates the rolling loss of a dataset over a window
+    This function calculates the rolling loss of a dataset or DataArray over a window
     of size 'window' along the time dimension.
     
-    When executed, this function will be processed using:
-        dataset.dt.rolling(dim='time', window=window).reduce(core_loss)
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
         
     Args:
         data: Input array or dataset
         window: Size of the rolling window
         
     Returns:
-        Dataset with rolling loss values
+        Dataset or DataArray with rolling loss values
         
     Examples:
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> loss_values = loss(ds, 30)  # 30-day loss
-        >>> # Equivalent to:
-        >>> # loss_values = ds.dt.rolling(dim='time', window=30).reduce(core_loss)  
+        >>> # Whole dataset calculation
+        >>> loss_values = loss(ds, 30)  # 30-day loss for all variables
+        >>> # Single variable calculation
+        >>> close_loss = loss($close, 30)  # 30-day loss for just close prices
     """
-    return data.dt.rolling(dim='time', window=window).reduce(core_loss)
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_loss)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_loss)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for loss: {type(data)}")
+
+@register_function(category="temporal")
+def wma(data, window, weights=None):
+    """
+    Calculate the weighted moving average along the time dimension.
+    
+    This function calculates the weighted moving average of a dataset or DataArray over a window
+    of size 'window' along the time dimension. If weights are not provided, it defaults to
+    linearly increasing weights (1, 2, 3, ..., window).
+    
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
+        
+    Args:
+        data: Input array or dataset
+        window: Size of the rolling window
+        weights: Optional array of weights. If None, defaults to linearly increasing weights.
+                Must have length equal to window size.
+        
+    Returns:
+        Dataset or DataArray with rolling weighted moving average values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> import jax.numpy as jnp
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> # Whole dataset calculation with default weights
+        >>> wma_values = wma(ds, 30)  # 30-day WMA for all variables
+        >>> # Single variable calculation with custom weights
+        >>> custom_weights = jnp.array([0.1, 0.2, 0.3, 0.4])  # Must sum to 1.0 or will be normalized
+        >>> close_wma = wma($close, 4, custom_weights)  # 4-day WMA for close prices
+    """
+    # Convert weights to JAX array if provided
+    if weights is not None:
+        import jax.numpy as jnp
+        weights = jnp.asarray(weights, dtype=jnp.float32)
+        if len(weights) != window:
+            raise ValueError(f"Weights array length ({len(weights)}) must equal window size ({window})")
+    
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_wma, weights=weights)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_wma, weights=weights)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for wma: {type(data)}")
 
 @register_function(category="temporal")
 def moving_median(data, window):
     """
     Calculate the moving median along the time dimension.
     
-    This function calculates the rolling median of a dataset over a window
+    This function calculates the rolling median of a dataset or DataArray over a window
     of size 'window' along the time dimension.
     
-    When executed, this function will be processed using:
-        dataset.dt.rolling(dim='time', window=window).reduce(core_median)
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
         
     Args:
         data: Input array or dataset
         window: Size of the rolling window
         
     Returns:
-        Dataset with rolling median values
+        Dataset or DataArray with rolling median values
         
     Examples:
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> median_values = moving_median(ds, 30)  # 30-day moving median
-        >>> # Equivalent to:
-        >>> # median_values = ds.dt.rolling(dim='time', window=30).reduce(core_median)
+        >>> # Whole dataset calculation
+        >>> median_values = moving_median(ds, 30)  # 30-day moving median for all variables
+        >>> # Single variable calculation
+        >>> close_median = moving_median($close, 30)  # 30-day moving median for just close prices
     """
-    return data.dt.rolling(dim='time', window=window).reduce(core_median)
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_median)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_median)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for moving_median: {type(data)}")
 
 @register_function(category="temporal")
 def moving_mode(data, window):  
     """
     Calculate the moving mode along the time dimension.
     
-    This function calculates the rolling mode of a dataset over a window
+    This function calculates the rolling mode of a dataset or DataArray over a window
     of size 'window' along the time dimension.
     
-    When executed, this function will be processed using:
-        dataset.dt.rolling(dim='time', window=window).reduce(core_mode)
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
         
     Args:
         data: Input array or dataset
         window: Size of the rolling window
         
     Returns:
-        Dataset with rolling mode values
+        Dataset or DataArray with rolling mode values
         
     Examples:
         >>> import xarray as xr
         >>> # Example with xarray dataset
         >>> ds = xr.Dataset(...)
-        >>> mode_values = moving_mode(ds, 30)  # 30-day moving mode
-        >>> # Equivalent to:
-        >>> # mode_values = ds.dt.rolling(dim='time', window=30).reduce(core_mode)
+        >>> # Whole dataset calculation
+        >>> mode_values = moving_mode(ds, 30)  # 30-day moving mode for all variables
+        >>> # Single variable calculation
+        >>> close_mode = moving_mode($close, 30)  # 30-day moving mode for just close prices
     """
-    return data.dt.rolling(dim='time', window=window).reduce(core_mode) 
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_mode)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_mode)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for moving_mode: {type(data)}")
+
+# Add a utility function to handle shift operations with DataArrays
+@register_function(category="temporal")
+def shift(data, periods=1):
+    """
+    Shift data along the time dimension.
+    
+    This function shifts a dataset or DataArray by a specified number of periods
+    along the time dimension. Positive values shift forward in time (introducing
+    NaNs at the beginning), negative values shift backward in time (introducing
+    NaNs at the end).
+    
+    Args:
+        data: Input array or dataset
+        periods: Number of periods to shift (default: 1)
+        
+    Returns:
+        Dataset or DataArray with shifted values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> # Whole dataset shift
+        >>> shifted_ds = shift(ds, 1)  # Shift all variables forward by 1 time period
+        >>> # Single variable shift
+        >>> shifted_close = shift($close, -1)  # Shift close prices backward by 1 time period
+    """
+    if isinstance(data, (xr.Dataset, xr.DataArray)):
+        return data.shift(time=periods)
+    else:
+        # Handle numpy arrays or other types
+        raise TypeError(f"Unsupported data type for shift: {type(data)}")
+
+# Register a function to easily compute returns for financial time series
+@register_function(category="financial")
+def returns(price_data, periods=1):
+    """
+    Calculate simple returns for a price series.
+    
+    This function computes the simple returns (price_t / price_t-n - 1) for 
+    a given price series over a specified number of periods.
+    
+    Args:
+        price_data: Input price array or dataset 
+        periods: Number of periods to use in return calculation (default: 1)
+        
+    Returns:
+        Dataset or DataArray with returns values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> # Whole dataset returns
+        >>> all_returns = returns(ds, 1)  # 1-period returns for all variables
+        >>> # Single variable returns
+        >>> close_returns = returns($close, 1)  # 1-period returns for just close prices
+    """
+    if isinstance(price_data, (xr.Dataset, xr.DataArray)):
+        shifted_price = shift(price_data, periods)
+        return price_data / shifted_price - 1
+    else:
+        # Handle numpy arrays or other types
+        raise TypeError(f"Unsupported data type for returns: {type(price_data)}")
 
 def register_built_in_functions():
     """Register built-in functions for common operations."""

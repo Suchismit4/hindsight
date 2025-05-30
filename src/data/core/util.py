@@ -15,12 +15,14 @@ enabling efficient storage, access, and manipulation of financial panel data.
 import os
 import numpy as np
 import xarray as xr
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any, Callable
 from enum import Enum
 import pandas as pd
 import pyreadstat
+import operator # For JAX assertions
 
 # Import the core operations
 from src.data.core.operations import TimeSeriesOps
@@ -479,7 +481,7 @@ class Loader:
             }
         )
 
-        # Add feature variables to the Dataset
+        # Add feature variables to the Dataset (initial creation without mask/indices)
         for fc in feature_columns:
             arr = feature_arrays[fc]
             if np.issubdtype(arr.dtype, np.number):
@@ -496,51 +498,144 @@ class Loader:
         # Add the TimeSeriesIndexing
         ds.coords['time'].attrs['indexes'] = {'time': ts_index}
         
+        # We are going to select a known asset and variable to create the mask and indices
+        # This is a temporary fix to avoid the problem of true NaNs and filling with 0s
+        # discuss with prof.
+        asset = 14593
+        var = 'prc'
+        
+        stacked_obj = None
+        
+        for var_name, da in ds.data_vars.items():
+            if np.issubdtype(da.dtype, np.number):
+                stacked_obj = da.sel(asset=asset).stack(time_index=("year", "month", "day"))
+                break
+        
+        if stacked_obj is None:
+            raise ValueError("No numeric variable found in the dataset. Failed to create mask and indices.")
+        
         # Create a stacked DataArray for mask and indices
-        first_var = list(ds.data_vars)[0]
-        stacked_obj = ds[first_var].stack(time_index=("year", "month", "day"))
+        # first_var = 'ret'
+        # stacked_obj = ds[first_var].stack(time_index=("year", "month", "day"))
         
         # Extract date tuples for mask creation
         time_tuples = stacked_obj.coords["time_index"].values  # Shape: (T, 3)
         _dates = np.array([[*date] for date in time_tuples])  # Convert to list of tuples
         
+        # TODO: A problem is that there are true NaNs and filling with 0s doesnt work for a
+        # a certain number of computations and produces errors. A temp fix to mask all NaNs
+        # discuss with prof.
         # Create business day mask and indices
         
-        dates = pd.to_datetime(
-            {
-                'year': _dates[:, 0],
-                'month': _dates[:, 1],
-                'day': _dates[:, 2]
-            }, 
-            errors='coerce'
-        )
+        # dates = pd.to_datetime(
+        #     {
+        #         'year': _dates[:, 0],
+        #         'month': _dates[:, 1],
+        #         'day': _dates[:, 2]
+        #     }, 
+        #     errors='coerce'
+        # )
         
-        # Create mask and indices
-        is_valid_date = ~dates.isna()
-        is_business_day = dates.dt.dayofweek < 5  # Monday=0 to Friday=4
-        mask = is_valid_date & is_business_day
+        # # Create mask and indices
+        # is_valid_date = ~dates.isna()
+        # is_business_day = dates.dt.dayofweek < 5  # Monday=0 to Friday=4
+        # mask = is_valid_date & is_business_day
 
-        mask = mask.to_numpy(dtype=bool)
+        # mask = mask.to_numpy(dtype=bool)
                 
-        # For positions where mask is True, store the original index.
-        valid_positions = np.flatnonzero(mask)  # positions of valid business days
-        valid_positions_sorted = np.sort(valid_positions)
+        # # For positions where mask is True, store the original index.
+        # valid_positions = np.flatnonzero(mask)  # positions of valid business days
+        # valid_positions_sorted = np.sort(valid_positions)
         
-        indices = -1 * np.ones(len(_dates), dtype=int)
-        num_valid = len(valid_positions_sorted)
-        indices[:num_valid] = valid_positions_sorted
+        # indices = -1 * np.ones(len(_dates), dtype=int)
+        # num_valid = len(valid_positions_sorted)
+        # indices[:num_valid] = valid_positions_sorted
 
-        # Debug to test for values on NaNs        
-        # print(indices[10])
-        # print(_dates[indices[10]])
-        # print(ds.dt.to_time_indexed()['close'].values[0, indices[:100]])
- 
-        ds.coords['mask'] = ('time', mask)                # Shape: (T,)
-        ds.coords['mask_indices'] = ('time', indices) 
+        # # Reshape mask and indices to match the time dimensions (year, month, day)
+        # time_shape = (len(years), len(months), len(days))
+        # # mask_3d = mask.reshape(time_shape)
+        # # indices_3d = indices.reshape(time_shape)
+
+        data_arr = stacked_obj.values # (T, assets)
+        # print(data_arr.shape)
+        mask = ~(np.isnan(data_arr)) # (T,)
+        # print(mask.shape)
+        # raise Exception("Stop here")
+
+        valid_pos = np.flatnonzero(mask)
+        T = mask.shape[0]
+        indices = -1 * np.ones(T, dtype=int)
+        indices[:valid_pos.shape[0]] = valid_pos
+
+        # Only assign mask and indices at the Dataset level with the flattened 'time' coordinate
+        ds = ds.assign_coords({
+             'mask': ('time', mask),                # Shape: (T,)
+             'mask_indices': ('time', indices)      # Shape: (T,)
+        })
                 
         # We have successfully built the Dataset. At this point, the structure
         # is fully set up with time, asset, and feature dimensions and coordinates.
         return ds
+
+    @classmethod
+    def load_simulated_data(
+        cls,
+        num_assets: int,
+        num_timesteps: int,
+        num_vars: int,
+        freq: FrequencyType = FrequencyType.DAILY,
+        start_date: str = '2000-01-01'
+    ) -> xr.Dataset:
+        """
+        Generates a simulated xarray Dataset with numeric data.
+
+        Args:
+            num_assets: Number of assets to simulate.
+            num_timesteps: Number of time steps to simulate.
+            num_vars: Number of data variables (features) to simulate.
+            freq: Frequency of the time series data (default: DAILY).
+            start_date: Start date for the time series (default: '2000-01-01').
+
+        Returns:
+            An xarray Dataset containing simulated numeric data.
+        """
+        # Generate asset identifiers
+        assets = [f"asset_{i+1}" for i in range(num_assets)]
+
+        # Generate date range based on frequency
+        # Note: pd.date_range uses calendar days/months/years.
+        # For true business day frequency, more complex logic is needed,
+        # but for simulation, this is often sufficient.
+        time_index = pd.date_range(start=start_date, periods=num_timesteps, freq=freq.value)
+
+        # Create MultiIndex
+        multi_index = pd.MultiIndex.from_product([assets, time_index], names=['asset', 'time'])
+
+        # Create DataFrame
+        df = pd.DataFrame(index=multi_index)
+
+        # Populate with random numeric data
+        for i in range(num_vars):
+            var_name = f"var_{i+1}"
+            # Use standard normal distribution for simulation
+            df[var_name] = np.random.randn(len(multi_index))
+
+        # Reset index to make 'asset' and 'time' columns
+        df = df.reset_index()
+
+        # Call from_table to create the Dataset
+        simulated_ds = cls.from_table(
+            data=df,
+            time_column='time',
+            asset_column='asset',
+            frequency=freq
+        )
+
+        return simulated_ds
+
+
+# Type alias for clarity (optional)
+DateLikeNp = Union[np.datetime64, np.ndarray] # Expecting np.datetime64[D]
 
 class Rolling(eqx.Module):
     """
@@ -570,8 +665,8 @@ class Rolling(eqx.Module):
                  obj: Union[xr.DataArray, xr.Dataset], 
                  dim: str, 
                  window: int,
-                 mask: jnp.ndarray, 
-                 indices: jnp.ndarray):
+                 mask: Optional[jnp.ndarray] = None, 
+                 indices: Optional[jnp.ndarray] = None):
         """
         Initializes the Rolling object.
 
@@ -579,19 +674,46 @@ class Rolling(eqx.Module):
             obj (Union[xr.DataArray, xr.Dataset]): The xarray object to apply rolling on.
             dim (str): The dimension over which to apply the rolling window.
             window (int): The size of the rolling window.
-            mask (jnp.ndarray): Boolean mask indicating valid business days.
-            indices (jnp.ndarray): Indices mapping business days to positions.
+            mask (Optional[jnp.ndarray]): Boolean mask indicating valid business days.
+                Required when obj is a DataArray, optional for Dataset.
+            indices (Optional[jnp.ndarray]): Indices mapping business days to positions.
+                Required when obj is a DataArray, optional for Dataset.
         """
         self.obj = obj
         self.dim = dim
         self.window = window
 
-        self.mask = mask
-        self.indices = jnp.where(indices == -1, 0, indices).astype(jnp.int32)
+        # Different handling for Dataset vs DataArray
+        if isinstance(obj, xr.Dataset):
+            # For Datasets, we can auto-extract mask and indices from coordinates if not provided
+            if mask is None and 'mask' in obj.coords:
+                mask = obj.coords['mask'].values
+            if indices is None and 'mask_indices' in obj.coords:
+                indices = obj.coords['mask_indices'].values
+                
+            # Ensure we have valid mask and indices at this point
+            if mask is None or indices is None:
+                raise ValueError("Dataset rolling operation requires 'mask' and 'mask_indices' coordinates "
+                                "or explicit mask/indices parameters.")
+        elif isinstance(obj, xr.DataArray):
+            # For DataArrays, mask and indices MUST be provided explicitly, as we don't 
+            # try to attach these coordinates to individual DataArrays anymore 
+            if mask is None or indices is None:
+                raise ValueError("DataArray rolling operation requires explicit mask and indices parameters. "
+                                "These should typically come from the parent Dataset's coordinates.")
+        
+        # Store as JAX arrays with type conversion
+        self.mask = jnp.asarray(mask, dtype=jnp.bool_)
+        self.indices = jnp.where(
+            jnp.asarray(indices) == -1, 
+            0, 
+            jnp.asarray(indices)
+        ).astype(jnp.int32)
         
     def reduce(self, 
                func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
-               overlap_factor: Optional[float] = None
+               overlap_factor: Optional[float] = None,
+               **func_kwargs
               ) -> Union[xr.DataArray, xr.Dataset]:
         """
         Apply a rolling window reduction function to the data.
@@ -605,6 +727,7 @@ class Rolling(eqx.Module):
                 return (result, final_state).
             overlap_factor (Optional[float]): If specified, requires at least this
                 fraction of the window to contain valid data.
+            **func_kwargs: Additional keyword arguments to pass to the function.
 
         Returns:
             Union[xr.DataArray, xr.Dataset]: The result of applying the rolling operation.
@@ -616,21 +739,29 @@ class Rolling(eqx.Module):
             rolled_data = {}
             for var_name, da in self.obj.data_vars.items():
                 if np.issubdtype(da.dtype, np.number):
-                    rolled_data[var_name] = Rolling(da, self.dim, self.window, self.mask, self.indices).reduce(
-                        func, overlap_factor=overlap_factor
-                    )
+                    # Pass the mask and indices explicitly when creating Rolling for a DataArray
+                    # This ensures the DataArray has access to these values even though they're
+                    # only stored at the Dataset level
+                    rolled_data[var_name] = Rolling(
+                        da, 
+                        self.dim, 
+                        self.window, 
+                        mask=self.mask,  # Explicitly pass mask from the Dataset
+                        indices=self.indices  # Explicitly pass indices from the Dataset
+                    ).reduce(func, overlap_factor=overlap_factor, **func_kwargs)
                 else:
                     rolled_data[var_name] = da
             return xr.Dataset(rolled_data, coords=self.obj.coords, attrs=self.obj.attrs)
         elif isinstance(self.obj, xr.DataArray):
-            return self._reduce_dataarray(func, overlap_factor)
+            return self._reduce_dataarray(func, overlap_factor, **func_kwargs)
         else:
             raise TypeError("Unsupported xarray object type.")
     
     @eqx.filter_jit
     def _reduce_dataarray(self, 
                           func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
-                          overlap_factor: Optional[float] = None
+                          overlap_factor: Optional[float] = None,
+                          **func_kwargs
                          ) -> xr.DataArray:
         """
         JIT-compiled implementation of rolling reduction for DataArrays.
@@ -641,6 +772,7 @@ class Rolling(eqx.Module):
         Parameters:
             func (Callable): The reduction function to apply to each window.
             overlap_factor (Optional[float]): Minimum fraction of valid data required.
+            **func_kwargs: Additional keyword arguments to pass to the function.
 
         Returns:
             xr.DataArray: The result of the rolling operation.
@@ -669,7 +801,8 @@ class Rolling(eqx.Module):
                 data=valid_data,
                 window_size=self.window,
                 func=func,
-                overlap_factor=overlap_factor
+                overlap_factor=overlap_factor,
+                **func_kwargs
             )
 
             T_full = data.shape[0]
@@ -688,3 +821,5 @@ class Rolling(eqx.Module):
         else:
             print(f'warning:{self.obj.dims} cross-sectional rolling not supported yet.')
             return self.obj
+        
+        

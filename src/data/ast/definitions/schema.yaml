@@ -1,0 +1,186 @@
+---
+# Schema for financial formula definition files
+# This schema defines the structure for formula definition YAML files
+# used by the Hindsight library's FormulaManager
+
+# Each formula is defined by a key-value pair, where the key is the formula name
+# and the value is a dictionary with the following fields:
+formula:
+  type: object
+  required:
+    - description
+    - expression
+    - return_type
+    - variables
+  properties:
+    # General formula information
+    description:
+      type: string
+      description: "Human-readable description of what the formula computes"
+    
+    expression:
+      type: string
+      description: "Formula string in the CFG syntax"
+    
+    return_type:
+      type: string
+      description: "Expected return type of the formula"
+      enum:
+        - scalar
+        - array
+        - dataarray
+        - dataset
+    
+    # Module/generator definitions for pre-computation
+    modules:
+      type: object
+      description: "Dictionary of external modules/functions for pre-computation"
+      patternProperties:
+        "^[a-zA-Z_][a-zA-Z0-9_]*$":  # Module alias pattern
+          type: object
+          required:
+            - module_path
+            - function_name
+          properties:
+            module_path:
+              type: string
+              description: "Python module path (e.g., 'src.data.generators.weights')"
+            function_name:
+              type: string
+              description: "Function name within the module"
+            description:
+              type: string
+              description: "Description of what this module function does"
+            cache_result:
+              type: boolean
+              description: "Whether to cache the result of this function"
+              default: true
+    
+    # Variable definitions
+    variables:
+      type: object
+      description: "Dictionary of variables used in the formula"
+      patternProperties:
+        "^[a-zA-Z_][a-zA-Z0-9_]*$":  # Variable name pattern
+          type: object
+          required:
+            - type
+            - description
+          properties:
+            type:
+              type: string
+              description: "Type of the variable"
+              enum:
+                - number
+                - array
+                - dataarray
+                - dataset
+                - function
+            description:
+              type: string
+              description: "Description of what the variable represents"
+            default:
+              type: any
+              description: "Optional default value for the variable"
+            validation:
+              type: object
+              description: "Optional validation rules"
+              properties:
+                min:
+                  type: number
+                max:
+                  type: number
+                regex:
+                  type: string
+                enum:
+                  type: array
+                  items:
+                    type: any
+            # Reference to a module for dynamic value generation
+            generator:
+              type: string
+              description: "Reference to a module alias for generating this variable's value"
+    
+    # Function definitions (if formula uses functions)
+    functions:
+      type: object
+      description: "Dictionary of functions used in the formula"
+      patternProperties:
+        "^[a-zA-Z_][a-zA-Z0-9_]*$":  # Function name pattern
+          type: object
+          required:
+            - description
+            - args
+          properties:
+            description:
+              type: string
+              description: "Description of what the function does"
+            args:
+              type: array
+              description: "List of argument descriptions"
+              items:
+                type: object
+                required:
+                  - name
+                  - type
+                  - description
+                properties:
+                  name:
+                    type: string
+                  type:
+                    type: string
+                    enum:
+                      - number
+                      - array
+                      - dataarray
+                      - dataset
+                      - function
+                  description:
+                    type: string
+                  optional:
+                    type: boolean
+                    default: false
+    
+    # Metadata
+    tags:
+      type: array
+      description: "Optional tags for categorizing formulas"
+      items:
+        type: string
+    
+    notes:
+      type: string
+      description: "Additional notes or implementation details"
+
+# Example formula definition:
+example:
+  moving_average:
+    description: "Compute moving average of a time series"
+    expression: "mean($data, window=window)"
+    return_type: dataarray
+    variables:
+      data:
+        type: dataarray
+        description: "Input time series data"
+      window:
+        type: number
+        description: "Window size for moving average"
+        validation:
+          min: 1
+    functions:
+      mean:
+        description: "Compute mean over a rolling window"
+        args:
+          - name: data
+            type: dataarray
+            description: "Input data"
+          - name: window
+            type: number
+            description: "Window size"
+    examples:
+      - input:
+          data: [1, 2, 3, 4, 5]
+          window: 3
+        output: [null, null, 2, 3, 4]
+        description: "Simple moving average with window size 3"
+    notes: "Uses forward-looking window alignment" 

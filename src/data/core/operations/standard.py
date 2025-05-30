@@ -173,7 +173,7 @@ def ema(i: int, carry, block: jnp.ndarray, window_size: int):
     alpha = 1 / window_size
     
     new_ema = alpha * current_price + (1 - alpha) * carry
-    
+        
     return (new_ema, new_ema)
 
 @partial(jax.jit, static_argnames=['window_size'])
@@ -181,60 +181,108 @@ def gain(i: int, carry, block: jnp.ndarray, window_size: int):
     """
     Compute the gain (positive change) from the previous time step.
 
-    Gain is defined as max(current_value - previous_value, 0).
-    This function follows the signature required by TimeSeriesOps.u_roll.
+    - First window: Gain of the last.
+    - Subsequent: current gain
 
     Args:
-        i (int): Current index in the block (ignored after initialization check).
-        carry: State carried over (ignored, calculation is stateless).
+        i (int): Current index in the block.
+        carry: Previous average gain if any.
         block (jnp.ndarray): The data block, shape (T_block, N_assets, 1).
-        window_size (int): Size of the moving window (ignored).
+        window_size (int): Size of the moving window.
 
     Returns:
-        tuple: (current_gain, None) where:
-            - current_gain has shape (N_assets, 1), representing the gain at step `i`.
-            - Carry is 1.
+        tuple: (current_gain, avg_gain) where:
+            - current_gain has shape (N_assets, 1)
     """
     if carry is None:
-        # Initialize gain as zero for the first step.
-        initial_gain = jnp.zeros((block.shape[1], block.shape[2]), dtype=block.dtype)
-        return initial_gain, None # Return initial zero gain, no carry needed
-
-    # Calculate gain: max(current - previous, 0)
-    # i is the end index of the conceptual window for u_roll's func call pattern.
-    # block[i] is the current value, block[i-1] is the previous.
-    # u_roll calls func starting from i = window_size, up to t-1.
-    # So i >= 1 is guaranteed when this part runs.
+        seed = jnp.zeros((block.shape[1], 1), dtype=block.dtype)
+        return seed, seed
+    
+    # Calculate current price change
     current_gain = jnp.maximum(block[i] - block[i - 1], 0)
-    return current_gain, 1 # Return current gain, no carry needed
+    
+    return current_gain, current_gain
 
-# TODO: Window_size is not used in the loss function. This might differ from actually how loss is computed. 
 @partial(jax.jit, static_argnames=['window_size'])
 def loss(i: int, carry, block: jnp.ndarray, window_size: int):
     """
-    Compute the loss (magnitude of negative change) from the previous time step.
-
-    Loss is defined as max(previous_value - current_value, 0).
-    This function follows the signature required by TimeSeriesOps.u_roll.
+    Compute the loss (negative change) from the previous time step.
 
     Args:
-        i (int): Current index in the block (ignored after initialization check).
-        carry: State carried over (ignored, calculation is stateless).
+        i (int): Current index in the block.
+        carry: Previous average loss if any.
         block (jnp.ndarray): The data block, shape (T_block, N_assets, 1).
-        window_size (int): Size of the moving window (ignored).
+        window_size (int): Size of the moving window.
 
     Returns:
-        tuple: (current_loss, None) where:
-            - current_loss has shape (N_assets, 1), representing the loss at step `i`.
-            - Carry is 1.
+        tuple: (current_loss, avg_loss) where:
+            - current_loss has shape (N_assets, 1)
     """
     if carry is None:
-        # Initialize loss as zero for the first step.
-        initial_loss = jnp.zeros((block.shape[1], block.shape[2]), dtype=block.dtype)
-        return initial_loss, None # Return initial zero loss, no carry needed
-
-    # Calculate loss: max(previous - current, 0)
-    # See comment in gain() regarding index i.
+        seed = jnp.zeros((block.shape[1], 1), dtype=block.dtype)
+        return seed, seed
+    
     current_loss = jnp.maximum(block[i - 1] - block[i], 0)
-    return current_loss, 1 # Return current loss, no carry needed
+    return current_loss, current_loss
+
+@partial(jax.jit, static_argnames=['window_size'])
+def wma(i: int, carry, block: jnp.ndarray, window_size: int, weights: jnp.ndarray = None):
+    """
+    Compute the Weighted Moving Average (WMA) for a given window.
+    
+    This function calculates the weighted moving average using provided weights
+    or defaults to linearly increasing weights (1, 2, 3, ..., window_size).
+    
+    Args:
+        i (int): Current index in the time series (-1 for initialization)
+        carry: Not used for WMA calculation (kept for interface consistency)
+        block (jnp.ndarray): The data block, shape (T, N, 1)
+        window_size (int): Size of the moving window
+        weights (jnp.ndarray, optional): Weights for the window. If None, defaults to
+                                       linearly increasing weights [1, 2, ..., window_size]
+    
+    Returns:
+        tuple: (current_wma, None) where current_wma has shape (N, 1)
+    """
+    # Default to linearly increasing weights if not provided
+    if weights is None:
+        weights = jnp.arange(1, window_size + 1, dtype=jnp.float32)
+    else:
+        # Ensure weights are a JAX array with correct dtype
+        weights = jnp.asarray(weights, dtype=jnp.float32)
+    
+    # Normalize weights so they sum to 1
+    weights = weights / jnp.sum(weights)
+    
+    # Handle initialization case (i == -1)
+    if carry is None:
+        # For the first window, extract data from start of block
+        window = jax.lax.dynamic_slice(
+            block,
+            start_indices=(0, 0, 0),
+            slice_sizes=(window_size, block.shape[1], 1)
+        )
+    else:
+        # For subsequent windows, extract current window
+        window = jax.lax.dynamic_slice(
+            block,
+            start_indices=(i - window_size + 1, 0, 0),
+            slice_sizes=(window_size, block.shape[1], 1)
+        )
+    
+    # Remove the singleton last dimension for computation; shape becomes (window_size, N)
+    window_2d = window[..., 0]  # shape: (window_size, N)
+    
+    # Reshape weights for broadcasting: (window_size, 1)
+    weights_reshaped = weights[:, None]  # shape: (window_size, 1)
+    
+    # Compute weighted average: sum(weights * values) along time axis
+    weighted_sum = jnp.sum(weights_reshaped * window_2d, axis=0)  # shape: (N,)
+    
+    # Expand to match expected output shape (N, 1)
+    current_wma = weighted_sum[:, None]
+    
+    # WMA is stateless, so we don't need to maintain carry state
+    # But we return current_wma as carry for consistency with the interface
+    return current_wma, current_wma
 

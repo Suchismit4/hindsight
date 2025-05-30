@@ -1,12 +1,11 @@
 # src/data/core/operations/__init__.py
 
-import math
-import numpy as np
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any, Callable
 import functools
+from functools import partial
 
 class TimeSeriesOps(eqx.Module):
     """
@@ -68,7 +67,7 @@ class TimeSeriesOps(eqx.Module):
         return result.at[tgt_positions].set(src_data)
     
     @staticmethod
-    @eqx.filter_jit
+    @partial(jax.jit, static_argnames=['window_size', 'func', 'overlap_factor'])
     def u_roll(
         data: jnp.ndarray,
         window_size: int,
@@ -77,6 +76,7 @@ class TimeSeriesOps(eqx.Module):
             Tuple[jnp.ndarray, Any]
         ],
         overlap_factor: float = None,
+        **func_kwargs
     ) -> jnp.ndarray:
         """
         Applies a function over rolling windows along the 'time' dimension using block processing for parallelization.
@@ -87,13 +87,14 @@ class TimeSeriesOps(eqx.Module):
                 Function to apply over the rolling window. Should accept an index, the carry, the block, and window size,
                 and return (value, new_carry).
             overlap_factor (float, optional): Factor determining the overlap between blocks.
+            **func_kwargs: Additional keyword arguments to pass to the function.
 
         Returns:
             jnp.ndarray: Data array computed with the u_roll method.
         """
         
         # Set NaN values to zero to avoid issues with NaN in the data
-        data = jnp.nan_to_num(data)
+        # data = jnp.nan_to_num(data)
         
         # Helper method to prepare blocks of data for u_roll
         def _prepare_blocks(
@@ -110,7 +111,7 @@ class TimeSeriesOps(eqx.Module):
 
             Returns:
                 Tuple[jnp.ndarray, jnp.ndarray]: Padded data and block indices for slicing.
-            """
+            """ 
             data = jnp.nan_to_num(data)
 
             num_time_steps = data.shape[0]
@@ -124,6 +125,8 @@ class TimeSeriesOps(eqx.Module):
 
             # Compute the effective block size (kw) based on the overlap factor and window size
             # This tells us how many time steps each block will span, including overlap
+            # Since overlap_factor is now static, we can use regular Python operations
+            import math
             block_size = math.ceil(overlap_factor * window_size)
 
             if block_size > max_windows:
@@ -168,7 +171,7 @@ class TimeSeriesOps(eqx.Module):
             values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float32)
 
             # Initialize carry with the func (i == -1 case)
-            initial_value, carry = func(-1, None, block, window_size)
+            initial_value, carry = func(-1, None, block, window_size, **func_kwargs)
 
             # Set the initial value in the values array
             values = values.at[0].set(initial_value)
@@ -176,7 +179,7 @@ class TimeSeriesOps(eqx.Module):
             # Apply the step function iteratively
             def step_wrapper(i: int, state):
                 values, carry = state
-                new_value, new_carry = func(i, carry, block, window_size)
+                new_value, new_carry = func(i, carry, block, window_size, **func_kwargs)
                 idx = i - window_size + 1
                 values = values.at[idx].set(new_value)
                 return (values, new_carry)
@@ -211,4 +214,4 @@ class TimeSeriesOps(eqx.Module):
 # Standard rolling functions
 
 # TODO: Create a factory possibly?
-from .standard import mean, mode, ema, median, gain, loss, sum_func
+from .standard import mean, mode, ema, median, gain, loss, sum_func, wma

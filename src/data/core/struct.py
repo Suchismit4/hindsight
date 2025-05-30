@@ -99,7 +99,7 @@ class DateTimeAccessorBase:
         
         return ds_flat
     
-    def rolling(self, dim: str, window: int) -> 'Rolling':
+    def rolling(self, dim: str, window: int, mask: Optional[jnp.ndarray] = None, mask_indices: Optional[jnp.ndarray] = None) -> 'Rolling':
         """
         Creates a Rolling object for applying rolling window operations.
 
@@ -109,15 +109,38 @@ class DateTimeAccessorBase:
         Parameters:
             dim (str): The dimension over which to apply the rolling window.
             window (int): The size of the rolling window.
+            mask (Optional[jnp.ndarray]): Boolean mask indicating valid business days.
+                If None, will attempt to extract from the object's coordinates.
+            mask_indices (Optional[jnp.ndarray]): Indices mapping business days to positions.
+                If None, will attempt to extract from the object's coordinates.
 
         Returns:
             Rolling: An instance of the Rolling class that allows applying 
                     window operations with methods like .mean(), .sum(), etc.
+                    
+        Raises:
+            ValueError: If unable to obtain the required mask and indices for
+                        the rolling operation.
         """
-        # Extract mask and indices from the Dataset 
-        mask = jnp.array(self._obj.coords['mask'].values)  # Shape: (T,)
-        indices = jnp.array(self._obj.coords['mask_indices'].values)  # Shape: (T,)
-        return Rolling(self._obj, dim, window, mask, indices)
+        obj = self._obj
+        
+        # Use provided mask and indices if available
+        if mask is None or mask_indices is None:
+            # If not provided, try to extract from the object's coordinates
+            if 'mask' in obj.coords and mask is None:
+                mask = jnp.array(obj.coords['mask'].values)
+            if 'mask_indices' in obj.coords and mask_indices is None:
+                mask_indices = jnp.array(obj.coords['mask_indices'].values)
+            
+            # If still not available, raise an error
+            if mask is None or mask_indices is None:
+                raise ValueError(
+                    "Rolling operation requires mask and mask_indices. "
+                    "Either provide them as parameters or ensure they exist "
+                    "as coordinates on the object."
+                )
+        
+        return Rolling(obj, dim, window, mask=mask, indices=mask_indices)
 
     def shift(self, periods: int = 1) -> Union[xr.Dataset, xr.DataArray]:
         """
@@ -220,7 +243,33 @@ class DatasetDateTimeAccessor(DateTimeAccessorBase):
         dataset.dt.rolling(dim='time', window=20).mean()
         ```
     """
-    pass
+    
+    def get_var(self, var_name: str) -> xr.DataArray:
+        """
+        Retrieve a DataArray from the Dataset with a reference back to its parent.
+        
+        This method sets a _dataset attribute on the returned DataArray pointing
+        back to the parent Dataset, enabling mask/indices access for rolling operations.
+        
+        Parameters:
+            var_name (str): The name of the variable to extract.
+            
+        Returns:
+            xr.DataArray: The DataArray with a reference to its parent Dataset.
+            
+        Raises:
+            KeyError: If the variable doesn't exist in the Dataset.
+        """
+        if var_name not in self._obj.data_vars:
+            raise KeyError(f"Variable '{var_name}' not found in Dataset")
+            
+        # Get the DataArray
+        data_array = self._obj[var_name]
+        
+        # Set reference to parent Dataset
+        data_array._dataset = self._obj
+        
+        return data_array
 
 @xr.register_dataarray_accessor('dt')
 class DataArrayDateTimeAccessor(DateTimeAccessorBase):
@@ -237,4 +286,27 @@ class DataArrayDateTimeAccessor(DateTimeAccessorBase):
         data_array.dt.rolling(dim='time', window=20).mean()
         ```
     """
-    pass
+    def __init__(self, xarray_obj: xr.DataArray) -> None:
+        """
+        Initialize the DataArrayDateTimeAccessor with a DataArray and attempt
+        to locate its parent Dataset for mask/indices access.
+        
+        Parameters:
+            xarray_obj (xr.DataArray): The xarray DataArray to access.
+        """
+        super().__init__(xarray_obj)
+        
+        # Try to identify the parent Dataset
+        # First check if DataArray has a custom _dataset attribute from direct assignment
+        self._parent_obj = getattr(xarray_obj, '_dataset', None)
+        
+        # If not, see if this DataArray is a variable within a Dataset by checking the name
+        if self._parent_obj is None and hasattr(xarray_obj, 'name') and xarray_obj.name is not None:
+            # Find the DataArray's parent Dataset
+            # This is a heuristic approach and might not always work
+            # Ideally DataArrays would track their parent Dataset
+            for var in xarray_obj.coords.values():
+                if hasattr(var, '_dataset') and isinstance(var._dataset, xr.Dataset):
+                    if xarray_obj.name in var._dataset.data_vars:
+                        self._parent_obj = var._dataset
+                        break

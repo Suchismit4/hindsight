@@ -31,6 +31,12 @@ Examples of valid formulas:
 import re
 from typing import Dict, List, Set, Tuple, FrozenSet, Optional, Match, Iterator, Union
 
+# TODO: Add support for:
+#   - Custom operator definitions
+#   - Extended function syntax (named args, etc)
+#   - Type annotations in formulas
+#   - Error recovery during parsing
+
 # Define the grammar components
 
 # Set of non-terminal symbols
@@ -43,7 +49,8 @@ NON_TERMINALS: FrozenSet[str] = frozenset([
     'FunctionCall', # Function calls (e.g., foo(x, y))
     'Arguments',   # Function arguments (e.g., x, y, z)
     'Identifier',  # Variable and function names
-    'Number'       # Numeric literals
+    'Number',      # Numeric literals
+    'DataVariable' # DataArray references (e.g., $close)
 ])
 
 # Set of terminal symbols
@@ -52,6 +59,7 @@ TERMINALS: FrozenSet[str] = frozenset([
     '(', ')', ',',           # Delimiters
     # Identifiers and numbers are represented by regex patterns
     'IDENTIFIER',  # /[a-zA-Z_][a-zA-Z0-9_]*/
+    'DATAVAR',     # /$[a-zA-Z_][a-zA-Z0-9_]*/
     'NUMBER',      # /[0-9]+(\.[0-9]+)?/
 ])
 
@@ -83,6 +91,7 @@ PRODUCTIONS: Dict[str, List[str]] = {
     'Primary': [
         'Number',               # Numeric literal
         'Identifier',           # Variable
+        'DATAVAR',              # DataArray variable (with $ prefix)
         'FunctionCall',         # Function call
         '"(" Expression ")"'    # Parenthesized expression
     ],
@@ -120,6 +129,7 @@ FINANCIAL_FORMULA_GRAMMAR: Tuple[FrozenSet[str], FrozenSet[str], Dict[str, List[
 # Regular expressions for lexical analysis
 REGEX_PATTERNS = {
     'IDENTIFIER': r'[a-zA-Z_][a-zA-Z0-9_]*',  # Variables and function names
+    'DATAVAR': r'\$[a-zA-Z_][a-zA-Z0-9_]*',   # DataArray variables with $ prefix
     'NUMBER': r'([0-9]+(\.[0-9]+)?)|(\.[0-9]+)',  # Integer or decimal numbers
     'WHITESPACE': r'\s+',                      # Spaces, tabs, newlines
     'OPERATOR': r'[\+\-\*/\^]',                # Arithmetic operators
@@ -209,6 +219,7 @@ def tokenize(formula: str) -> List[Tuple[str, str]]:
     This function breaks a formula string into tokens, where each token is a
     tuple of (token_type, token_value). The token types are:
     - 'IDENTIFIER': Variable and function names
+    - 'DATAVAR': DataArray references with $ prefix 
     - 'NUMBER': Numeric literals
     - 'OPERATOR': Arithmetic operators (+, -, *, /, ^)
     - 'LPAREN': Left parenthesis
@@ -229,6 +240,8 @@ def tokenize(formula: str) -> List[Tuple[str, str]]:
         [('IDENTIFIER', 'x'), ('OPERATOR', '+'), ('IDENTIFIER', 'y'), ('OPERATOR', '*'), ('IDENTIFIER', 'z')]
         >>> tokenize("foo(x, 2.5)")
         [('IDENTIFIER', 'foo'), ('LPAREN', '('), ('IDENTIFIER', 'x'), ('COMMA', ','), ('NUMBER', '2.5'), ('RPAREN', ')')]
+        >>> tokenize("$close / $volume")
+        [('DATAVAR', '$close'), ('OPERATOR', '/'), ('DATAVAR', '$volume')]
     """
     tokens = []
     pos = 0
@@ -262,6 +275,8 @@ def tokenize(formula: str) -> List[Tuple[str, str]]:
             tokens.append((')', token_value))
         elif token_type == 'COMMA':
             tokens.append((',', token_value))
+        elif token_type == 'DATAVAR':
+            tokens.append((token_type, token_value))  # Keep the $ in the token value
         else:
             tokens.append((token_type, token_value))
     

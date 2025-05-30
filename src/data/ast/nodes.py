@@ -34,6 +34,18 @@ import jax.tree_util as jtu
 import xarray as xr
 import xarray_jax
 
+# Error classes for better error handling
+class ASTError(Exception): pass
+class ParseError(ASTError): pass
+class EvaluationError(ASTError): pass
+class ValidationError(ASTError): pass
+
+# Configuration class
+class ASTConfig:
+    enable_optimization: bool = True
+    enable_caching: bool = True
+    strict_mode: bool = False
+
 # Abstract base class for all AST nodes
 class Node(eqx.Module):
     """
@@ -418,6 +430,126 @@ class Variable(Node):
         """
         return self.name
 
+# Node for DataArray variables (referenced with $ syntax)
+class DataVariable(Node):
+    """
+    Node representing a reference to a specific DataArray within a Dataset.
+    
+    This node allows explicit reference to a named DataArray variable using
+    the '$variable' syntax. During evaluation, it extracts the referenced
+    DataArray from the Dataset in the context.
+    
+    Attributes:
+        name: The name of the DataArray variable (without the $ prefix)
+        
+    Examples:
+        >>> # Assuming a Dataset 'ds' with a DataArray 'close'
+        >>> DataVariable('close').evaluate({'_dataset': ds})
+        # Returns the 'close' DataArray from ds
+    """
+    name: str
+    
+    def evaluate(self, context: Dict[str, Any]) -> Union[xr.DataArray, Any]:
+        """
+        Evaluate the data variable by extracting it from the Dataset in the context.
+        
+        For string values: The context provides a string key for this variable, which is then
+        used to look up the DataArray in the context['_dataset'].
+        
+        For non-string values: Return the value directly (e.g., window=14).
+        
+        Args:
+            context: Dictionary containing the Dataset under '_dataset' key and
+                     other variables. For DataVariable nodes with string values,
+                     context[self.name] must be a string that is a valid key in context['_dataset'].
+                     For non-string values, returns context[self.name] directly.
+            
+        Returns:
+            The extracted DataArray (for string keys) or the direct value (for non-strings)
+            
+        Raises:
+            ValueError: If context is misconfigured or key is not found.
+            KeyError: If self.name is not in context.
+        """
+        if self.name not in context:
+            raise KeyError(f"AST variable '{self.name}' (e.g., from '${self.name}') not found in evaluation context.")
+        
+        value = context[self.name]
+        
+        # If it's not a string, return the value directly (e.g., window=14)
+        if not isinstance(value, str):
+            return value
+        
+        # String case: lookup in dataset
+        if '_dataset' not in context:
+            raise ValueError("No dataset provided in context")
+        
+        dataset = context['_dataset']
+        if not isinstance(dataset, xr.Dataset):
+            raise ValueError(f"Object stored under '_dataset' is not an xarray Dataset: {type(dataset)}")
+
+        # value is the string key for dataset lookup
+        actual_key_in_dataset = value
+            
+        if actual_key_in_dataset not in dataset:
+            raise ValueError(f"DataArray key '{actual_key_in_dataset}' (provided by context['{self.name}']) "
+                             f"not found in the Dataset variables: {list(dataset.data_vars.keys())}.")
+        
+        # Extract the DataArray
+        data_array = dataset[actual_key_in_dataset]
+        
+        if not isinstance(data_array, xr.DataArray):
+             raise ValueError(f"The entry '{actual_key_in_dataset}' in the dataset was expected to be an xr.DataArray, "
+                              f"but found type {type(data_array)}.")
+
+        # Add parent dataset reference as an attribute for use in rolling operations
+        # Create a copy to avoid modifying the original DataArray in the dataset
+        data_array = data_array.copy()
+        data_array.attrs['_parent_dataset'] = dataset
+        
+        # TEMPORARY FIX: Update to ensure mask and mask_indices are accessible in the context
+        # for this specific DataArray. Downstream functions (like rolling ops)
+        # currently expect these in the main context.
+        # Use actual_key_in_dataset for mask and indices keys for uniqueness.
+        mask_key = f"_mask_{actual_key_in_dataset}"
+        indices_key = f"_indices_{actual_key_in_dataset}"
+        
+        # Only add if mask/indices exist in the parent dataset and aren't already in context
+        # This avoids redundant additions if the same $variable is evaluated multiple times
+        if 'mask' in dataset.coords and mask_key not in context:
+            context[mask_key] = jnp.asarray(dataset.coords['mask'].values) # Add mask to context
+        if 'mask_indices' in dataset.coords and indices_key not in context:
+            context[indices_key] = jnp.asarray(dataset.coords['mask_indices'].values) # Add indices to context
+        
+        return data_array
+    
+    def get_variables(self) -> Set[str]:
+        """
+        Get all variable names used in this node.
+        
+        Returns:
+            A set containing the DataArray variable name prefixed with '$'
+        """
+        return {f"${self.name}"}
+    
+    def get_functions(self) -> Set[str]:
+        """
+        Get all function names used in this node and its children.
+        
+        Returns:
+            An empty set since DataVariable nodes don't use functions
+        """
+        return set()
+    
+    def __str__(self) -> str:
+        """
+        Convert the data variable reference to a string representation.
+        
+        Returns:
+            The variable name with $ prefix
+        """
+        return f"${self.name}"
+
 # Node for function calls
 class FunctionCall(Node):
     """
@@ -515,4 +647,112 @@ class FunctionCall(Node):
             A string representation of the function call
         """
         arg_strs = [str(arg) for arg in self.args]
-        return f"{self.name}({', '.join(arg_strs)})" 
+        return f"{self.name}({', '.join(arg_strs)})"
+
+# Node for resolved function calls (JIT-compatible)
+class ResolvedFunctionCall(Node):
+    """
+    Node representing a resolved function call with embedded function implementation.
+    
+    This node is created during AST preprocessing to embed the actual function 
+    implementation, making the AST JIT-compatible by avoiding function object 
+    lookups during evaluation.
+    
+    Attributes:
+        func: The actual function implementation
+        args: The resolved argument nodes
+        
+    Examples:
+        >>> func = lambda a, b: a + b
+        >>> ResolvedFunctionCall(func, [Literal(2.0), Literal(3.0)]).evaluate({})
+        Array(5., dtype=float32)
+    """
+    func: Callable
+    args: List[Node]
+    
+    def evaluate(self, context: Dict[str, Any]) -> Union[jnp.ndarray, xr.DataArray, xr.Dataset]:
+        """
+        Evaluate the resolved function call using the embedded function implementation.
+        
+        Args:
+            context: Dictionary mapping variable names to their values
+                    (no function lookups needed)
+            
+        Returns:
+            The result of the function call
+        """
+        # Evaluate arguments, handling Literal values directly
+        processed_args = []
+        for arg_node in self.args:
+            if isinstance(arg_node, Literal):
+                # Pass Literal values as Python scalars
+                val = arg_node.value
+                if val == int(val):
+                    processed_args.append(int(val))
+                else:
+                    processed_args.append(val)
+            else:
+                # Evaluate other node types
+                evaluated_arg = arg_node.evaluate(context)
+                processed_args.append(evaluated_arg)
+
+        # Call the embedded function with the processed arguments
+        try:
+            return self.func(*processed_args)
+        except Exception as e:
+            arg_types = [type(a) for a in processed_args]
+            func_name = getattr(self.func, '__name__', str(self.func))
+            print(f"Error calling resolved function {func_name} with arg types: {arg_types}")
+            raise ValueError(f"Error calling resolved function: {str(e)}")
+    
+    def get_variables(self) -> Set[str]:
+        """
+        Get all variable names used in this node and its children.
+        
+        Returns:
+            A set of variable names from all arguments
+        """
+        variables = set()
+        for arg in self.args:
+            variables |= arg.get_variables()
+        return variables
+    
+    def get_functions(self) -> Set[str]:
+        """
+        Get all function names used in this node and its children.
+        
+        Returns:
+            A set of function names from all arguments (this node is resolved)
+        """
+        functions = set()
+        for arg in self.args:
+            functions |= arg.get_functions()
+        return functions
+    
+    def __str__(self) -> str:
+        """
+        Convert the resolved function call to a string representation.
+        
+        Returns:
+            A string representation of the resolved function call
+        """
+        func_name = getattr(self.func, '__name__', 'resolved_func')
+        arg_strs = [str(arg) for arg in self.args]
+        return f"{func_name}({', '.join(arg_strs)})"
+
+# Helper functions (placeholders for future implementation)
+def cached_evaluation(f):
+    cache = {}
+    def wrapper(*args):
+        key = hash(args)
+        if key not in cache:
+            cache[key] = f(*args)
+        return cache[key]
+    return wrapper
+
+# TODO: Add type validation and coercion system
+# TODO: Add operator registry for custom operations
+# TODO: Add visitor pattern for AST transformations
+# TODO: Add serialization/deserialization support
+# TODO: Add proper doctest suite
+# TODO: Add performance benchmarking suite

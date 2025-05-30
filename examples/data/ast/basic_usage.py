@@ -35,7 +35,7 @@ from src.data.ast import (
     visualize_ast,
     visualize_parse_tree,
     get_grammar_description,
-    optimize_formula
+    optimize_formula,
 )
 
 from src.data.ast.functions import (
@@ -323,7 +323,9 @@ def example_jit_compilation():
             'a': a, 'b': b, 'c': c,
             'x': x, 'y': y, 'z': z
         })
-        return ast.evaluate(eval_context)
+
+        result = ast.evaluate(eval_context)
+        return result
     
     @jax.jit
     def evaluate_jit(a, b, c, x, y, z):
@@ -335,7 +337,9 @@ def example_jit_compilation():
         # Need to include the function context in the JIT
         for k, v in context.items():
             eval_context[k] = v
-        return ast.evaluate(eval_context)
+
+        result = ast.evaluate(eval_context)
+        return result
     
     # Create large arrays for benchmarking
     size = 1000
@@ -359,15 +363,17 @@ def example_jit_compilation():
     normal_times = []
     
     print("\nBenchmarking JIT vs. non-JIT evaluation...")
+    jit_result_val = None # Store the actual JIT result value
+    normal_result_val = None # Store the actual non-JIT result value
     for i in range(runs):
         # Time JIT version
         start = time.time()
-        jit_result = evaluate_jit(a, b, c, x, y, z)
+        jit_result_val = evaluate_jit(a, b, c, x, y, z)
         jit_times.append(time.time() - start)
         
         # Time normal version
         start = time.time()
-        normal_result = evaluate_normal(a, b, c, x, y, z)
+        normal_result_val = evaluate_normal(a, b, c, x, y, z)
         normal_times.append(time.time() - start)
     
     # Compute averages
@@ -391,19 +397,17 @@ def example_jit_compilation():
     print("\nBenchmark plot saved to: examples/visualizations/jit_benchmark.png")
     
     # Verify results match
-    match = jnp.allclose(jit_result, normal_result)
+    # Compare the actual result values extracted from the tuples
+    match = jnp.allclose(jit_result_val, normal_result_val)
     print(f"Results match: {match}")
 
 def example_rolling_operations():
     """
-    Example 6: Rolling Operations.
+    Example 7: Rolling Operations with DataArray References and Result Datasets.
     
-    Demonstrates how to use rolling statistical functions to perform
-    calculations on time series data. Shows both the AST formula representation
-    and the actual computation using the dataset.dt.rolling accessor.
-    Also benchmarks JIT vs non-JIT performance for these operations.
+    Demonstrates how to use the $variable syntax
     """
-    print("\n=== Example 6: Rolling Operations ===")
+    print("\n=== Example 7: Rolling Operations with Result Datasets ===")
     
     # Load a small dataset for demonstration
     dm = DataManager()
@@ -449,160 +453,75 @@ def example_rolling_operations():
             ]
         }
     )['wrds/equity/crsp']
-        
+    
+    # Create adjusted price variable
     ds["adj_prc"] = ds["prc"] / ds["cfacpr"]
     
-    # Create formula AST for calculations
-    print("\nParsing formulas for rolling calculations:")
+    print("\n=== Using $variable Syntax for DataArray References ===")
     
-    # Moving average with window of 30 days
-    ma_formula = "sma(dataset, 30)"
-    ma_ast = parse_formula(ma_formula)
-    print(f"Formula: {ma_formula}")
+    # Define a complex formula involving intermediate steps
+    formula = "1 + sma($adj_prc, 50) / sma($adj_prc, 200)"
+    print(f"Formula: {formula}")
     
-    # Exponential moving average with window of 30 days
-    ema_formula = "ema(dataset, 30)"
-    ema_ast = parse_formula(ema_formula)
-    print(f"Formula: {ema_formula}")
-        
-    # Example of more complex formula using rolling operations
-    complex_formula = "100 - (100 / (1 + ema(gain(dataset, 14), 14) / ema(loss(dataset, 14), 14)))"
-    complex_ast = parse_formula(complex_formula)
-    print(f"Complex RSI formula: {complex_formula}")
+    # Parse the formula
+    ast = parse_formula(formula)
     
-    # Visualize the AST for a complex formula
-    os.makedirs("examples/visualizations", exist_ok=True)
-    vis_file = visualize_ast(
-        complex_ast,
-        output_path="examples/visualizations/rolling_operations_ast",
-        view=False
-    )
-    print(f"AST visualization saved to: {vis_file}")
-    
-    # =======================================================
-    # Benchmark JIT vs non-JIT performance for rolling operations
-    # =======================================================
-    print("\n=== Benchmarking Rolling Operations: JIT vs Non-JIT ===")
-    
-    # Get the function context
+    # Setup execution environment
     context = get_function_context()
+    context['_dataset'] = ds  # Dataset for $variable references and result structure
     
-    # Create non-JIT and JIT evaluation functions
-    def evaluate_normal(dataset, window1: int, window2: int):
-        """Evaluate all formulas without JIT compilation."""
-        eval_context = context.copy()
-        eval_context.update({
-            'dataset': dataset
-        })
-        
-        # Evaluate moving mean with window1
-        eval_context['window'] = window1
-        ma_result1 = ma_ast.evaluate(eval_context)
-        
-        # Evaluate moving mean with window2
-        eval_context['window'] = window2
-        ma_result2 = ma_ast.evaluate(eval_context)
-        
-        # Evaluate moving EMA with window1
-        ema_result = ema_ast.evaluate(eval_context)
-        
-        # Evaluate complex formula (ratio of moving means)
-        complex_result = complex_ast.evaluate(eval_context)
-        
-        return ma_result1, ma_result2, ema_result, complex_result
-    
-    @jax.jit
-    def evaluate_jit(dataset, window1: int, window2: int):
-        """Evaluate all formulas with JIT compilation."""
-        eval_context = {
-            'dataset': dataset
-        }
-        
-        # Include the function context
-        for k, v in context.items():
-            eval_context[k] = v
-        
-        # Evaluate moving mean with window1
-        eval_context['window'] = window1
-        ma_result1 = ma_ast.evaluate(eval_context)
-        
-        # Evaluate moving mean with window2
-        eval_context['window'] = window2
-        ma_result2 = ma_ast.evaluate(eval_context)
-        
-        # Evaluate moving EMA with window1
-        ema_result = ema_ast.evaluate(eval_context)
-        
-        # Evaluate complex formula (ratio of moving means)
-        complex_result = complex_ast.evaluate(eval_context)
-        
-        return ma_result1, ma_result2, ema_result, complex_result
-    
-    jit_ready_ds, _ = prepare_for_jit(ds)
-    
-    # Prepare data for benchmarking
+    print("\nEvaluating formula")
     try:
-        subset_ds = jit_ready_ds
-        
-        # You can uncomment this to benchmark on a subset of assets which can be faster to benchmark...
-        if len(jit_ready_ds.asset) > 10:
-            subset_ds = jit_ready_ds.isel(asset=slice(0, 1000))
+        final_ds = ast.evaluate(
+            context
+        )
+        print(f"Final value type: {type(final_ds).__name__}")
+
+        # --- Plotting Example ---
+        # Let's plot the 50-day and 200-day SMA
+        if "sma($adj_prc, 50)" in final_ds and "sma($adj_prc, 200)" in final_ds and '$adj_prc' in final_ds:
+            print("\nPlotting SMAs for the first asset...")
             
-        # Use a subset of time for faster benchmarking if needed
-        if len(subset_ds.time) > 500:
-            subset_ds = subset_ds.isel(time=slice(0, 1000))
+            # Select data for the first asset using its identifier (e.g., PERMNO)
+            asset_permno = 14593  # Example: Apple's PERMNO
+            if asset_permno not in ds['asset'].values:
+                 print(f"Warning: Asset {asset_permno} not found. Using first available asset.")
+                 asset_permno = ds['asset'].values[0]
+                 
+            # Select the subset for the chosen asset
+            plot_vars = ["$adj_prc", "sma($adj_prc, 50)", "sma($adj_prc, 200)"]
+            asset_ds_subset = final_ds[plot_vars].sel(asset=asset_permno)
             
-        window1 = int(30)
-        window2 = int(10)
-        
-        # Compile the JIT function (first call)
-        print("Compiling JIT function...")
-        start = time.time()
-        _ = evaluate_jit(subset_ds, window1, window2)
-        compile_time = time.time() - start
-        print(f"JIT compilation time: {compile_time:.6f} seconds")
-        
-        # Benchmark both versions
-        runs = 10
-        jit_times = []
-        normal_times = []
-        
-        print("\nBenchmarking rolling operations with JIT vs. non-JIT evaluation...")
-        for i in tqdm(range(runs), desc="Benchmarking:"):
-            # Time JIT version
-            start = time.time()
-            jit_results = evaluate_jit(subset_ds, window1, window2)
-            jit_times.append(time.time() - start)
+            try:
+                asset_ts = asset_ds_subset.dt.to_time_indexed()
+            except Exception as plot_prep_e:
+                 print(f"Error preparing data for plotting: {plot_prep_e}")
+                 asset_ts = None
+
+            if asset_ts is not None:
+                plt.figure(figsize=(12, 6))
+                
+                # Plot original price and SMAs
+                asset_ts['$adj_prc'].plot.line(x="time", label='Original adj_prc', color='blue', alpha=0.5)
+                asset_ts["sma($adj_prc, 50)"].plot.line(x="time", label='SMA(50)', color='orange')
+                asset_ts["sma($adj_prc, 200)"].plot.line(x="time", label='SMA(200)', color='red')
             
-            # Time normal version
-            start = time.time()
-            normal_results = evaluate_normal(subset_ds, window1, window2)
-            normal_times.append(time.time() - start)
-        
-        # Compute averages
-        avg_jit = sum(jit_times) / len(jit_times)
-        avg_normal = sum(normal_times) / len(normal_times)
-        speedup = avg_normal / avg_jit
-        
-        # Print results
-        print(f"\nResults summary:")
-        print(f"Average JIT time: {avg_jit:.6f} seconds")
-        print(f"Average non-JIT time: {avg_normal:.6f} seconds")
-        print(f"Speedup factor: {speedup:.2f}x")
-        
-        # Create a simple bar chart for visualization
-        plt.figure(figsize=(10, 6))
-        plt.bar(['JIT', 'Non-JIT'], [avg_jit, avg_normal])
-        plt.title('Rolling Operations: JIT vs. Non-JIT Performance')
-        plt.ylabel('Average Execution Time (seconds)')
-        plt.yscale('log')  # Log scale for better visibility
-        plt.savefig('examples/visualizations/rolling_operations_benchmark.png')
-        print("\nBenchmark plot saved to: examples/visualizations/rolling_operations_benchmark.png")
-        
-    
+                plt.title(f"Adjusted Price vs. SMAs (Asset: {asset_permno})")
+                plt.xlabel("Time")
+                plt.ylabel("Price")
+                plt.legend()
+                plt.grid(True)
+                
+                plot_path = "examples/visualizations/sma_comparison.png"
+                plt.savefig(plot_path)
+                plt.close()
+                print(f"SMA comparison plot saved to: {plot_path}")
+            else:
+                 print("Skipping plot due to data preparation error.")
+        # ------------------------
+
     except Exception as e:
-        print(f"\nBenchmark could not be completed: {e}")
-        print("Make sure the dataset contains the expected structure and variables.")
+        print(f"Error during evaluation: {str(e)}")
 
 def main():
     """Run all examples."""

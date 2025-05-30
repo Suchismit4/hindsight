@@ -1,0 +1,265 @@
+# Technical Analysis Formula Definitions
+#
+# This file defines common technical analysis formulas using the AST grammar.
+# Each formula is defined with its variables, functions, and validation rules.
+
+rsi:
+  description: "Relative Strength Index - measures momentum"
+  expression: "100 - (100 / (1 + (ema(gain($price, 1), $window) / ema(loss($price, 1), $window))))"
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "Period for RSI calculation"
+      default: 14
+      validation:
+        min: 1
+        max: 100
+  functions:
+    ema:
+      description: "Exponential Moving Average"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window" 
+          type: "number"
+          description: "Window size"
+    gain:
+      description: "Positive price changes"
+      args:
+        - name: "data"
+          type: "dataarray" 
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods"
+    loss:
+      description: "Negative price changes"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods"
+  notes: "RSI values range from 0 to 100. Values above 70 indicate overbought conditions, below 30 indicate oversold conditions."
+
+wma:
+  description: "Weighted Moving Average - assigns higher weights to more recent values"
+  expression: "wma($price, $window, $weights)"
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "Period for WMA calculation"
+      default: 20
+      validation:
+        min: 1
+        max: 200
+    weights:
+      type: "array"
+      description: "Optional weight array. If not provided, uses linearly increasing weights [1,2,...,window]"
+      default: null
+  functions:
+    wma:
+      description: "Weighted Moving Average calculation"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Window size"
+        - name: "weights"
+          type: "array"
+          description: "Array of weights (optional)"
+  notes: "WMA gives more weight to recent values. Default weights are linearly increasing. Custom weights will be normalized to sum to 1."
+
+alma:
+  description: "Arnaud Legoux Moving Average - adaptive weighted moving average using Gaussian weights"
+  expression: "wma($price, $window, $weights)"
+  return_type: "dataarray"
+  modules:
+    alma_generator:
+      module_path: "src.data.generators.weights"
+      function_name: "alma_weights"
+      description: "Generate ALMA weights using Gaussian distribution"
+      cache_result: true
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "Period for ALMA calculation"
+      default: 10
+      validation:
+        min: 1
+        max: 200
+    offset:
+      type: "number"
+      description: "Phase offset (0 to 1). 0.85 focuses on recent values, 0.1 on older values"
+      default: 0.85
+      validation:
+        min: 0.0
+        max: 1.0
+    sigma:
+      type: "number"
+      description: "Smoothing parameter. Higher values make weights more uniform"
+      default: 6
+      validation:
+        min: 1
+        max: 20
+    weights:
+      type: "array"
+      description: "ALMA weights generated using Gaussian distribution"
+      generator: "alma_generator"
+  functions:
+    wma:
+      description: "Weighted Moving Average calculation"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Window size"
+        - name: "weights"
+          type: "array"
+          description: "Array of weights"
+  notes: "ALMA provides a good balance between responsiveness and smoothness using Gaussian-distributed weights."
+
+dema:
+  description: "Double Exponential Moving Average - reduces lag of traditional EMA"
+  expression: "2 * ema($price, $window) - ema(ema($price, $window), $window)"
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "Period for DEMA calculation"
+      default: 21
+      validation:
+        min: 1
+        max: 200
+  functions:
+    ema:
+      description: "Exponential Moving Average"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Window size"
+  notes: "DEMA applies exponential smoothing twice to reduce lag while maintaining smoothness. The formula is: 2*EMA(data) - EMA(EMA(data))."
+
+fwma:
+  description: "Fibonacci Weighted Moving Average - uses Fibonacci sequence for weights"
+  expression: "wma($price, $window, $weights)"
+  return_type: "dataarray"
+  modules:
+    fibonacci_generator:
+      module_path: "src.data.generators.weights"
+      function_name: "fibonacci_weights"
+      description: "Generate Fibonacci weights for moving average"
+      cache_result: true
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "Period for FWMA calculation"
+      default: 21
+      validation:
+        min: 1
+        max: 200
+    asc:
+      type: "boolean"
+      description: "True to weight recent prices more heavily, False for older prices"
+      default: true
+    weights:
+      type: "array"
+      description: "Fibonacci weights generated using Fibonacci sequence"
+      generator: "fibonacci_generator"
+  functions:
+    wma:
+      description: "Weighted Moving Average calculation"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Window size"
+        - name: "weights"
+          type: "array"
+          description: "Array of weights"
+  notes: "FWMA uses Fibonacci numbers as weights. When asc=True, recent values get higher Fibonacci weights. The weights are normalized to sum to 1."
+
+hma:
+  description: "Hull Moving Average - reduces lag of moving averages by nested WMAs"
+  expression: >
+    wma(
+      2 * wma($price, $half_length)
+      - wma($price, $window),
+      $sqrt_length
+    )
+  return_type: "dataarray"
+  modules:
+    half_window_generator:
+      module_path: "src.data.generators.window"
+      function_name: "half_window"
+      description: "Compute floor(window/2) for HMA inner WMA"
+      cache_result: true
+    sqrt_window_generator:
+      module_path: "src.data.generators.window"
+      function_name: "sqrt_window"
+      description: "Compute floor(sqrt(window)) for HMA outer WMA"
+      cache_result: true
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "Period for HMA calculation"
+      default: 21
+      validation:
+        min: 1
+        max: 200
+    half_length:
+      type: "number"
+      description: "Half-window size = floor(window/2)"
+      generator: "half_window_generator"
+    sqrt_length:
+      type: "number"
+      description: "Sqrt-window size = floor(sqrt(window))"
+      generator: "sqrt_window_generator"
+  functions:
+    wma:
+      description: "Weighted Moving Average"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input series"
+        - name: "window"
+          type: "number"
+          description: "Window size"
+        - name: "weights"
+          type: "array"
+          description: "Weight vector (optional)"
+  notes: |
+    HMA = WMA(2 * WMA(price, half_length) - WMA(price, window), sqrt_length).
+    Uses nested WMAs to reduce lag while maintaining smoothness.
+
