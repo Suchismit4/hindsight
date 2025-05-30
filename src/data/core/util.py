@@ -757,7 +757,6 @@ class Rolling(eqx.Module):
         else:
             raise TypeError("Unsupported xarray object type.")
     
-    @eqx.filter_jit
     def _reduce_dataarray(self, 
                           func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
                           overlap_factor: Optional[float] = None,
