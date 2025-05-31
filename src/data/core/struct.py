@@ -142,13 +142,15 @@ class DateTimeAccessorBase:
         
         return Rolling(obj, dim, window, mask=mask, indices=mask_indices)
 
-    def shift(self, periods: int = 1) -> Union[xr.Dataset, xr.DataArray]:
+    def shift(self, periods: int = 1, mask_indices: Optional[jnp.ndarray] = None) -> Union[xr.Dataset, xr.DataArray]:
         """
         Shift the data by a specified number of business days, skipping weekends and holidays.
         
         Parameters:
             periods (int): Number of periods to shift. Positive values shift forward in time,
                         negative values shift backward.
+            mask_indices (Optional[jnp.ndarray]): Indices mapping business days to positions.
+                If None, will attempt to extract from the object's coordinates.
         
         Returns:
             Union[xr.Dataset, xr.DataArray]: A new xarray object with shifted data.
@@ -161,7 +163,10 @@ class DateTimeAccessorBase:
         # Handle Dataset case by applying shift to each DataArray
         if isinstance(obj, xr.Dataset):
             # Extract mask and mask_indices from the dataset
-            mask_indices = obj.coords.get('mask_indices', None)
+            if mask_indices is None:
+                mask_indices_coord = obj.coords.get('mask_indices', None)
+                if mask_indices_coord is not None:
+                    mask_indices = jnp.array(mask_indices_coord.values)
             
             if mask_indices is None:
                 # Can't perform business day shifting without mask and mask_indices
@@ -179,7 +184,7 @@ class DateTimeAccessorBase:
                         stacked_da = stacked_da.transpose("time_index", ...)
                         
                         # Convert to JAX arrays for efficient computation
-                        indices_array = jnp.array(mask_indices.values)
+                        indices_array = mask_indices
                         # Replace -1 with 0 for valid indexing, but maintain mask for filtering
                         indices_array = jnp.where(indices_array == -1, 0, indices_array).astype(jnp.int32)
                         data = jnp.asarray(stacked_da.values)
@@ -198,8 +203,11 @@ class DateTimeAccessorBase:
             return xr.Dataset(shifted_vars, coords=obj.coords, attrs=obj.attrs)
         
         # For DataArrays
-        # Extract mask and mask_indices from the dataset
-        mask_indices = obj.coords.get('mask_indices', None)
+        # Use provided mask_indices or extract from coordinates
+        if mask_indices is None:
+            mask_indices_coord = obj.coords.get('mask_indices', None)
+            if mask_indices_coord is not None:
+                mask_indices = jnp.array(mask_indices_coord.values)
             
         if mask_indices is None:
             raise ValueError("No mask found and tried to shift a DataArray.")
@@ -212,7 +220,7 @@ class DateTimeAccessorBase:
         stacked_obj = stacked_obj.transpose("time_index", ...)
         
         # Convert to JAX arrays for efficient computation
-        indices_array = jnp.array(mask_indices.values)
+        indices_array = mask_indices
         # Replace -1 with 0 for valid indexing, but maintain mask for filtering
         indices_array = jnp.where(indices_array == -1, 0, indices_array).astype(jnp.int32)
         data = jnp.asarray(stacked_obj.values)

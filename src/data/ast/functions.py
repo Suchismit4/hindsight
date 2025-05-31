@@ -33,6 +33,8 @@ Examples:
 import inspect
 from typing import Dict, Any, Callable, List, Union, Optional, TypeVar, cast, overload
 import xarray as xr
+import jax.numpy as jnp
+import numpy as np
 
 from src.data.core.operations import mean as core_mean
 from src.data.core.operations import ema as core_ema
@@ -41,6 +43,9 @@ from src.data.core.operations import mode as core_mode
 from src.data.core.operations import gain as core_gain
 from src.data.core.operations import loss as core_loss
 from src.data.core.operations import wma as core_wma
+from src.data.core.operations import triple_exponential_smoothing as core_triple_exponential_smoothing
+from src.data.core.operations import adaptive_ema as core_adaptive_ema
+from src.data.core.operations import sum_func as core_sum_func
 
 # Type variables for better type hinting
 F = TypeVar('F', bound=Callable[..., Any])
@@ -328,7 +333,7 @@ def coalesce(a, b):
     Returns:
         a if a is not NaN, otherwise b
     """
-    return xr.where(xr.ufuncs.isnan(a), b, a)
+    return xr.where(np.isnan(a), b, a)
 
 @register_function(category="statistical")
 def std(data, dim=None):
@@ -423,7 +428,7 @@ def sqrt(x):
     Returns:
         Square root with same structure as input
     """
-    return xr.ufuncs.sqrt(x)
+    return np.sqrt(x)
 
 @register_function(category="arithmetic")
 def abs(x):
@@ -438,7 +443,7 @@ def abs(x):
     Returns:
         Absolute value with same structure as input
     """
-    return xr.ufuncs.abs(x)
+    return np.abs(x)
 
 @register_function(category="arithmetic")
 def log(x):
@@ -453,7 +458,7 @@ def log(x):
     Returns:
         Natural logarithm with same structure as input
     """
-    return xr.ufuncs.log(x)
+    return np.log(x)
 
 @register_function(category="arithmetic")
 def exp(x):
@@ -468,7 +473,7 @@ def exp(x):
     Returns:
         Exponential with same structure as input
     """
-    return xr.ufuncs.exp(x)
+    return np.exp(x)
 
 @register_function(category="statistical")
 def mean(data, dim=None):
@@ -923,8 +928,39 @@ def shift(data, periods=1):
         >>> # Single variable shift
         >>> shifted_close = shift($close, -1)  # Shift close prices backward by 1 time period
     """
-    if isinstance(data, (xr.Dataset, xr.DataArray)):
-        return data.shift(time=periods)
+    if isinstance(data, xr.Dataset):
+        # Check if this dataset has the 3D time structure (year, month, day)
+        if 'year' in data.coords and 'month' in data.coords and 'day' in data.coords:
+            # Use business day aware shift
+            return data.dt.shift(periods=periods)
+        else:
+            # Use simple xarray shift for regular time dimensions
+            return data.shift(time=periods)
+            
+    elif isinstance(data, xr.DataArray):
+        # Check if this DataArray has the 3D time structure
+        if 'year' in data.coords and 'month' in data.coords and 'day' in data.coords:
+            # DataArray case with 3D time: need to handle mask explicitly
+            mask_indices = None
+            if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+                parent_ds = data.attrs['_parent_dataset']
+                if 'mask_indices' in parent_ds.coords:
+                    mask_indices = parent_ds.coords['mask_indices'].values
+                    
+            if mask_indices is not None:
+                # Call dt.shift directly, passing mask_indices
+                import jax.numpy as jnp
+                return data.dt.shift(periods=periods, mask_indices=jnp.array(mask_indices))
+            else:
+                # If mask_indices cannot be found, raise an error
+                raise ValueError(
+                    "Shift operation on DataArray with 3D time structure requires mask_indices. "
+                    "Ensure the DataArray originated from a Dataset with these coordinates, "
+                    "or provide them explicitly if calling the function directly."
+                )
+        else:
+            # Use simple xarray shift for regular time dimensions
+            return data.shift(time=periods)
     else:
         # Handle numpy arrays or other types
         raise TypeError(f"Unsupported data type for shift: {type(data)}")
@@ -960,6 +996,217 @@ def returns(price_data, periods=1):
     else:
         # Handle numpy arrays or other types
         raise TypeError(f"Unsupported data type for returns: {type(price_data)}")
+
+@register_function(category="temporal")
+def triple_exponential_smoothing(data, alpha=0.2, beta=0.1, gamma=0.1):
+    """
+    Calculate triple exponential smoothing (Holt-Winters method) along the time dimension.
+    
+    This function implements the generic Holt-Winters triple exponential smoothing algorithm
+    that maintains three state variables: level (F), trend (V), and acceleration (A).
+    
+    The computation follows the Holt-Winters equations:
+    F[t] = (1-α) * (F[t-1] + V[t-1] + 0.5*A[t-1]) + α * X[t]
+    V[t] = (1-β) * (V[t-1] + A[t-1]) + β * (F[t] - F[t-1])  
+    A[t] = (1-γ) * A[t-1] + γ * (V[t] - V[t-1])
+    
+    Output = F[t] + V[t] + 0.5*A[t]
+    
+    This function can be used as a foundation for implementing HWMA and other
+    triple exponential smoothing variants.
+    
+    Args:
+        data: Input array or dataset
+        alpha: Level smoothing parameter (0 < α < 1, default: 0.2)
+        beta: Trend smoothing parameter (0 < β < 1, default: 0.1)  
+        gamma: Acceleration smoothing parameter (0 < γ < 1, default: 0.1)
+        
+    Returns:
+        Dataset or DataArray with triple exponential smoothing values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> # Apply triple exponential smoothing with default parameters
+        >>> smoothed = triple_exponential_smoothing(ds)
+        >>> # Apply with custom parameters
+        >>> smoothed = triple_exponential_smoothing($close, alpha=0.3, beta=0.15, gamma=0.05)
+    """
+    # Validate parameters
+    if not (0 < alpha < 1):
+        raise ValueError(f"Alpha must be between 0 and 1, got {alpha}")
+    if not (0 < beta < 1):
+        raise ValueError(f"Beta must be between 0 and 1, got {beta}")
+    if not (0 < gamma < 1):
+        raise ValueError(f"Gamma must be between 0 and 1, got {gamma}")
+    
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        # For stateful operations, we use window=1 since each point depends on the previous state
+        return data.dt.rolling(dim='time', window=1).reduce(
+            core_triple_exponential_smoothing, 
+            alpha=alpha, beta=beta, gamma=gamma
+        )
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=1, mask=mask, mask_indices=indices).reduce(
+                core_triple_exponential_smoothing,
+                alpha=alpha, beta=beta, gamma=gamma
+            )
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for triple_exponential_smoothing: {type(data)}")
+
+@register_function(category="temporal")
+def adaptive_ema(data, smoothing_factors):
+    """
+    Calculate adaptive exponential moving average with varying smoothing factors.
+    
+    This function applies EMA-style smoothing where the smoothing parameter can vary
+    at each time step. This enables implementation of indicators like KAMA and other
+    adaptive smoothing methods.
+    
+    The computation follows: EMA[t] = smoothing[t] * value[t] + (1 - smoothing[t]) * EMA[t-1]
+    
+    Args:
+        data: Input array or dataset (time series data)
+        smoothing_factors: Array of smoothing factors for each time step (0 < factor < 1)
+        
+    Returns:
+        Dataset or DataArray with adaptive EMA values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> import jax.numpy as jnp
+        >>> # Example with varying smoothing factors
+        >>> smoothing = xr.DataArray(jnp.array([0.1, 0.2, 0.3, 0.2, 0.1]))
+        >>> result = adaptive_ema($close, smoothing)
+    """
+    
+    # Convert smoothing_factors to JAX array if it's an xarray object
+    if isinstance(smoothing_factors, (xr.Dataset, xr.DataArray)):
+        # Stack the time dimensions if it's a 3D structure to match how the rolling operations work
+        if 'year' in smoothing_factors.coords and 'month' in smoothing_factors.coords and 'day' in smoothing_factors.coords:
+            smoothing_stacked = smoothing_factors.stack(time_index=("year", "month", "day"))
+            smoothing_stacked = smoothing_stacked.transpose("time_index", ...)
+            smoothing_vals = smoothing_stacked.values
+        else:
+            smoothing_vals = smoothing_factors.values
+            
+        # Ensure we have the right shape for the core function: (T, N, 1)
+        if smoothing_vals.ndim == 2:  # (T, N) - this is the expected case for dataset operations
+            smoothing_vals = smoothing_vals[..., None]  # (T, N, 1)
+        elif smoothing_vals.ndim == 1:  # (T,) - single asset case
+            smoothing_vals = smoothing_vals[:, None, None]  # (T, 1, 1)
+        elif smoothing_vals.ndim == 3:  # Already (T, N, 1)
+            pass  # No change needed
+        else:
+            raise ValueError(f"Unexpected smoothing_factors shape: {smoothing_vals.shape}")
+            
+        smoothing_jax = jnp.asarray(smoothing_vals)
+    else:
+        # Already a JAX/numpy array
+        smoothing_jax = jnp.asarray(smoothing_factors)
+        if smoothing_jax.ndim == 1:
+            smoothing_jax = smoothing_jax[:, None, None]
+        elif smoothing_jax.ndim == 2:
+            smoothing_jax = smoothing_jax[..., None]
+    
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        # For stateful operations, we use window=1 since each point depends on the previous state
+        return data.dt.rolling(dim='time', window=1).reduce(
+            core_adaptive_ema, 
+            smoothing_factors=smoothing_jax
+        )
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=1, mask=mask, mask_indices=indices).reduce(
+                core_adaptive_ema,
+                smoothing_factors=smoothing_jax
+            )
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for adaptive_ema: {type(data)}")
+
+@register_function(category="temporal")
+def rolling_sum(data, window):
+    """
+    Calculate the rolling sum along the time dimension.
+    
+    This function calculates the rolling sum of a dataset or DataArray over a window
+    of size 'window' along the time dimension.
+    
+    Args:
+        data: Input array or dataset
+        window: Size of the rolling window
+        
+    Returns:
+        Dataset or DataArray with rolling sum values
+        
+    Examples:
+        >>> rolling_sum($close, 10)  # 10-period rolling sum
+    """
+    if isinstance(data, xr.Dataset):
+        return data.dt.rolling(dim='time', window=window).reduce(core_sum_func)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_sum_func)
+        else:
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        raise TypeError(f"Unsupported data type for rolling_sum: {type(data)}")
 
 def register_built_in_functions():
     """Register built-in functions for common operations."""

@@ -14,7 +14,7 @@ class TimeSeriesOps(eqx.Module):
     """
         
     @staticmethod
-    @eqx.filter_jit
+    @partial(jax.jit, static_argnames=['periods'])
     def shift(
         data: jnp.ndarray, 
         indices: jnp.ndarray,
@@ -214,4 +214,4 @@ class TimeSeriesOps(eqx.Module):
 # Standard rolling functions
 
 # TODO: Create a factory possibly?
-from .standard import mean, mode, ema, median, gain, loss, sum_func, wma
+from .standard import mean, mode, ema, median, gain, loss, sum_func, wma, triple_exponential_smoothing, adaptive_ema

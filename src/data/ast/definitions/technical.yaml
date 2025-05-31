@@ -263,3 +263,211 @@ hma:
     HMA = WMA(2 * WMA(price, half_length) - WMA(price, window), sqrt_length).
     Uses nested WMAs to reduce lag while maintaining smoothness.
 
+hwma:
+  description: "Holt-Winter Moving Average - three-parameter moving average using Holt-Winters method"
+  expression: "triple_exponential_smoothing($price, $na, $nb, $nc)"
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    na:
+      type: "number"
+      description: "Smoothed series parameter (level smoothing)"
+      default: 0.2
+      validation:
+        min: 0.01
+        max: 0.99
+    nb:
+      type: "number"
+      description: "Trend parameter (trend smoothing)"
+      default: 0.1
+      validation:
+        min: 0.01
+        max: 0.99
+    nc:
+      type: "number"
+      description: "Seasonality parameter (acceleration smoothing)"
+      default: 0.1
+      validation:
+        min: 0.01
+        max: 0.99
+  functions:
+    triple_exponential_smoothing:
+      description: "Generic triple exponential smoothing calculation"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input price data"
+        - name: "alpha"
+          type: "number"
+          description: "Level smoothing parameter (na)"
+        - name: "beta"
+          type: "number"
+          description: "Trend smoothing parameter (nb)"
+        - name: "gamma"
+          type: "number"
+          description: "Acceleration smoothing parameter (nc)"
+  notes: |
+    HWMA uses three exponential smoothing equations:
+    F[i] = (1-na) * (F[i-1] + V[i-1] + 0.5*A[i-1]) + na * Price[i]
+    V[i] = (1-nb) * (V[i-1] + A[i-1]) + nb * (F[i] - F[i-1])
+    A[i] = (1-nc) * A[i-1] + nc * (V[i] - V[i-1])
+    HWMA[i] = F[i] + V[i] + 0.5*A[i]
+    
+    This provides a forecast-oriented moving average that captures level, trend, and acceleration.
+    HWMA is implemented using the generic triple_exponential_smoothing function with parameter mapping: na→alpha, nb→beta, nc→gamma.
+
+triple_exponential_smoothing:
+  description: "Generic Triple Exponential Smoothing (Holt-Winters method) - maintains level, trend, and acceleration"
+  expression: "triple_exponential_smoothing($data, $alpha, $beta, $gamma)"
+  return_type: "dataarray"
+  variables:
+    data:
+      type: "dataarray"
+      description: "Input time series data"
+    alpha:
+      type: "number"
+      description: "Level smoothing parameter"
+      default: 0.2
+      validation:
+        min: 0.01
+        max: 0.99
+    beta:
+      type: "number"
+      description: "Trend smoothing parameter"
+      default: 0.1
+      validation:
+        min: 0.01
+        max: 0.99
+    gamma:
+      type: "number"
+      description: "Acceleration smoothing parameter"
+      default: 0.1
+      validation:
+        min: 0.01
+        max: 0.99
+  functions:
+    triple_exponential_smoothing:
+      description: "Generic triple exponential smoothing calculation"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input time series data"
+        - name: "alpha"
+          type: "number"
+          description: "Level smoothing parameter (0 < α < 1)"
+        - name: "beta"
+          type: "number"
+          description: "Trend smoothing parameter (0 < β < 1)"
+        - name: "gamma"
+          type: "number"
+          description: "Acceleration smoothing parameter (0 < γ < 1)"
+  notes: |
+    Generic Holt-Winters triple exponential smoothing with three state variables:
+    F[t] = (1-α) * (F[t-1] + V[t-1] + 0.5*A[t-1]) + α * X[t]  (Level)
+    V[t] = (1-β) * (V[t-1] + A[t-1]) + β * (F[t] - F[t-1])     (Trend)
+    A[t] = (1-γ) * A[t-1] + γ * (V[t] - V[t-1])               (Acceleration)
+    Output = F[t] + V[t] + 0.5*A[t]
+    
+    This is the base implementation that HWMA and other variants can build upon.
+
+kama:
+  description: "Kaufman's Adaptive Moving Average - trend-following indicator that adapts to market noise"
+  expression: >
+    adaptive_ema(
+      $price,
+      (abs($price - shift($price, $length)) / rolling_sum(abs($price - shift($price, $drift)), $length) * ($fast_sc - $slow_sc) + $slow_sc)^2
+    )
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    length:
+      type: "number"
+      description: "Lookback period for efficiency ratio calculation"
+      default: 10
+      validation:
+        min: 2
+        max: 100
+    fast:
+      type: "number"
+      description: "Fast EMA period for adaptive smoothing"
+      default: 2
+      validation:
+        min: 1
+        max: 50
+    slow:
+      type: "number"
+      description: "Slow EMA period for adaptive smoothing"
+      default: 30
+      validation:
+        min: 2
+        max: 200
+    drift:
+      type: "number"
+      description: "Period for price change calculation"
+      default: 1
+      validation:
+        min: 1
+        max: 10
+    fast_sc:
+      type: "number"
+      description: "Fast smoothing constant: 2/(fast+1)"
+      default: 0.6667  # 2/(2+1)
+      validation:
+        min: 0.01
+        max: 1.0
+    slow_sc:
+      type: "number"
+      description: "Slow smoothing constant: 2/(slow+1)"
+      default: 0.0645  # 2/(30+1)
+      validation:
+        min: 0.01
+        max: 1.0
+  functions:
+    adaptive_ema:
+      description: "Adaptive exponential moving average with varying smoothing factors"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input price data"
+        - name: "smoothing_factors"
+          type: "dataarray"
+          description: "Adaptive smoothing factors for each time step"
+    shift:
+      description: "Shift data along time dimension"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+    rolling_sum:
+      description: "Rolling sum over a window"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Window size"
+    abs:
+      description: "Absolute value"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+  notes: |
+    KAMA adapts its smoothing based on market efficiency:
+    1. Direction Movement = abs(price[t] - price[t-length])
+    2. Volatility = sum(abs(price[t] - price[t-drift]) for length periods)
+    3. Efficiency Ratio = Direction Movement / Volatility
+    4. Adaptive Smoothing = (ER * (fast_sc - slow_sc) + slow_sc)²
+    5. KAMA[t] = smoothing * price[t] + (1-smoothing) * KAMA[t-1]
+    
+    When efficiency is high (trending), KAMA responds faster. When efficiency is low (choppy), KAMA responds slower.
+    Default fast_sc=2/3 (fast=2), slow_sc=2/31 (slow=30).
+
