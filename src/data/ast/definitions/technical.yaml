@@ -5,7 +5,7 @@
 
 rsi:
   description: "Relative Strength Index - measures momentum"
-  expression: "100 - (100 / (1 + (ema(gain($price, 1), $window) / ema(loss($price, 1), $window))))"
+  expression: "100 - (100 / (1 + (rma(gain($price, 1), $window) / rma(loss($price, 1), $window))))"
   return_type: "dataarray"
   variables:
     price:
@@ -19,8 +19,8 @@ rsi:
         min: 1
         max: 100
   functions:
-    ema:
-      description: "Exponential Moving Average"
+    rma:
+      description: "Relative Moving Average"
       args:
         - name: "data"
           type: "dataarray"

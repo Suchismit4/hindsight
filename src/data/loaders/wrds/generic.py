@@ -108,7 +108,6 @@ class GenericWRDSDataLoader(BaseDataSource):
         ```python
         processors = {
             "set_permno_coord": True,
-            "set_permco_coord": True,
             "fix_market_equity": True,
             "merge_table": [
                 {
@@ -198,6 +197,9 @@ class GenericWRDSDataLoader(BaseDataSource):
         identifier_col: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         filters_config: Optional[List[Dict[str, Any]]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        **config
     ) -> pd.DataFrame:
         """
         Preprocess the raw DataFrame for standardization and cleanup.
@@ -206,8 +208,9 @@ class GenericWRDSDataLoader(BaseDataSource):
         1. Normalizes column names to lowercase
         2. Converts date columns to proper datetime format
         3. Renames identifier columns for consistency
-        4. Applies filters to subset the data
-        5. Sorts and resets the index
+        4. Applies date range filtering based on start_date and end_date
+        5. Applies additional filters to subset the data
+        6. Sorts and resets the index
         
         Subclasses can override or extend this method to implement
         data source-specific preprocessing.
@@ -218,6 +221,8 @@ class GenericWRDSDataLoader(BaseDataSource):
             identifier_col: Name of the entity column (e.g., 'permno', 'gvkey')
             filters: Django-style filters (e.g., {"column__gte": value})
             filters_config: Explicit filter configurations (for advanced cases)
+            start_date: Start date for filtering (e.g., "2020-01-01")
+            end_date: End date for filtering (e.g., "2024-01-01")
             **config: Additional keyword arguments
 
         Returns:
@@ -238,7 +243,29 @@ class GenericWRDSDataLoader(BaseDataSource):
         if identifier_col and (id_col_lower := identifier_col.lower()) in df.columns:
             df = df.rename(columns={id_col_lower: 'identifier'})
 
-        # Apply filters - give precedence to filters_config if both are provided
+        # Apply date range filtering based on start_date and end_date
+        if start_date or end_date:
+            if 'date' in df.columns:
+                pre_filter_len = len(df)
+                
+                # Ensure date column is datetime
+                if not pd.api.types.is_datetime64_any_dtype(df['date']):
+                    df['date'] = pd.to_datetime(df['date'])
+                
+                if start_date:
+                    start_date_dt = pd.to_datetime(start_date)
+                    df = df[df['date'] >= start_date_dt]
+                
+                if end_date:
+                    end_date_dt = pd.to_datetime(end_date)
+                    df = df[df['date'] <= end_date_dt]
+                
+                post_filter_len = len(df)
+                print(f"Date range filter [{start_date} to {end_date}]: {pre_filter_len} -> {post_filter_len} rows")
+            else:
+                print("WARNING: start_date/end_date provided but no 'date' column found in DataFrame")
+
+        # Apply additional filters - give precedence to filters_config if both are provided
         if filters_config:
             df = self.apply_filters(df, filters_config)
         elif filters:

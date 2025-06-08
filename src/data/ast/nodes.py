@@ -471,25 +471,38 @@ class DataVariable(Node):
             ValueError: If context is misconfigured or key is not found.
             KeyError: If self.name is not in context.
         """
-        if self.name not in context:
-            raise KeyError(f"AST variable '{self.name}' (e.g., from '${self.name}') not found in evaluation context.")
-        
-        value = context[self.name]
-        
-        # If it's not a string, return the value directly (e.g., window=14)
-        if not isinstance(value, str):
-            return value
-        
-        # String case: lookup in dataset
-        if '_dataset' not in context:
-            raise ValueError("No dataset provided in context")
-        
-        dataset = context['_dataset']
-        if not isinstance(dataset, xr.Dataset):
-            raise ValueError(f"Object stored under '_dataset' is not an xarray Dataset: {type(dataset)}")
+        # Check if variable is in context first (standard case)
+        if self.name in context:
+            value = context[self.name]
+            
+            # If it's not a string, return the value directly (e.g., window=14)
+            if not isinstance(value, str):
+                return value
+                
+            # String case: lookup in dataset using the string as key
+            if '_dataset' not in context:
+                raise ValueError("No dataset provided in context")
+            
+            dataset = context['_dataset']
+            if not isinstance(dataset, xr.Dataset):
+                raise ValueError(f"Object stored under '_dataset' is not an xarray Dataset: {type(dataset)}")
 
-        # value is the string key for dataset lookup
-        actual_key_in_dataset = value
+            # value is the string key for dataset lookup
+            actual_key_in_dataset = value
+        else:
+            # Variable not in context - check if it's a time series dependency (direct dataset lookup)
+            if '_dataset' not in context:
+                raise ValueError("No dataset provided in context")
+            
+            dataset = context['_dataset']
+            if not isinstance(dataset, xr.Dataset):
+                raise ValueError(f"Object stored under '_dataset' is not an xarray Dataset: {type(dataset)}")
+            
+            # For time series dependencies, try using the variable name directly as the dataset key
+            if self.name in dataset:
+                actual_key_in_dataset = self.name
+            else:
+                raise KeyError(f"AST variable '{self.name}' (e.g., from '${self.name}') not found in evaluation context or dataset variables: {list(dataset.data_vars.keys())}.")
             
         if actual_key_in_dataset not in dataset:
             raise ValueError(f"DataArray key '{actual_key_in_dataset}' (provided by context['{self.name}']) "

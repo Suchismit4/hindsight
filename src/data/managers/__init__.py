@@ -14,6 +14,19 @@ providing a high-level API that abstracts away the complexities of
 the underlying data infrastructure.
 """
 
-from .data_manager import DataManager
+from .data_manager import DataManager, CharacteristicsManager
+from .config_schema import (
+    DataConfig, 
+    DataSourceConfig, 
+    ConfigLoader, 
+    DataConfigBuilder
+)
 
-__all__ = ['DataManager']
+__all__ = [
+    'DataManager',
+    'CharacteristicsManager', 
+    'DataConfig',
+    'DataSourceConfig',
+    'ConfigLoader',
+    'DataConfigBuilder'
+]

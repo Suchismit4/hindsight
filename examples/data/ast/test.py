@@ -19,51 +19,12 @@ manager = FormulaManager()
 
 # Load CRSP data
 dm = DataManager()
-ds = dm.get_data(
-    {
-        "data_sources": [
-            {
-                "data_path": "wrds/equity/crsp",
-                "config": {
-                    "start_date": "2020-01-01",
-                    "end_date": "2024-01-01",
-                    "freq": "D",
-                    "filters": {
-                        "date__gte": "2020-01-01"
-                    },
-                    "processors": {
-                        "replace_values": {
-                            "source": "delistings",
-                            "rename": [["dlstdt", "time"]],
-                            "identifier": "permno",
-                            "from_var": "dlret",
-                            "to_var": "ret"
-                        },
-                        "merge_table": [
-                            {
-                                "source": "msenames",
-                                "identifier": "permno",
-                                "column": "comnam",
-                                "axis": "asset"
-                            },
-                            {
-                                "source": "msenames",
-                                "identifier": "permno",
-                                "column": "exchcd",
-                                "axis": "asset"
-                            }
-                        ],
-                        "set_permco_coord": True,
-                        "fix_market_equity": True
-                    }
-                }
-            }
-        ]
-    }
-)['wrds/equity/crsp']
+configs = dm.get_builtin_configs()
+print("Available configs:", configs)
+ds = dm.load_builtin("equity_standard", "2020-01-01", "2024-01-01")['equity_prices']
 
 # create the closing prices
-ds["close"] = ds["prc"] / ds["cfacpr"]
+ds["close"] = ds["prc"] / ds[" v"]
 
 # Prepare data for JIT, since some vars are not JIT compatible. For example, strings.
 ds_jit, recover = prepare_for_jit(ds)
@@ -76,8 +37,6 @@ def create_jit_evaluator():
     # Capture the static context in the closure
     static_context = {
         "price": "close",
-        "window": 14,
-        "weights": None,
         **function_context
     }
     
@@ -89,22 +48,38 @@ def create_jit_evaluator():
             "_dataset": dataset,
             **static_context
         }
-        # Test with specific formulas that don't require module generators
-        formula_names = ["wma", "rsi", "dema"]  # Avoid hma, alma, fwma for now
-        return manager.evaluate_bulk(formula_names, context, jit_compile=True)
+        
+        # Multi-configuration evaluation with lag examples
+        formula_configs = {
+            "wma": [
+                {"window": 10},
+                {"window": 20}, 
+                {"window": 50} 
+            ],
+            "rsi": [
+                {"window": 14},     
+                {"window": 21}  
+            ],
+            "dema": {"window": 21},  
+            "alma": [
+                {"window": 10, "offset": 0.85, "sigma": 6},
+                {"window": 20, "offset": 0.9, "sigma": 8,}  
+            ]
+        }
+        
+        return manager.evaluate_bulk(formula_configs, context, jit_compile=True)
     
     return evaluate_formulas_jit
 
-# Create the JIT-compiled evaluator
-evaluate_formulas = create_jit_evaluator()
+evaluate_formulas_jit = create_jit_evaluator()
+results = evaluate_formulas_jit(ds_jit)
 
-print("Evaluating formulas with closure-based JIT compilation...")
-results = evaluate_formulas(ds_jit)
-
-print("Available formulas computed:", list(results.data_vars.keys()))
+print("Available formulas computed (JIT):", list(results.data_vars.keys()))
 print("Results shape:", {name: var.shape for name, var in results.data_vars.items()})
 
-# Test a second call to verify JIT caching works
-print("\nTesting JIT caching with second call...")
-results2 = evaluate_formulas(ds_jit)
-print("Second call successful - JIT caching is working!")
+# if 'divamt' in ds.data_vars:
+#     print("Distribution data available!")
+#     # Access dividend amounts for a specific asset
+#     apple_permno = 14593
+#     apple_dividends = ds['divamt'].sel(asset=apple_permno)
+#     print(f"Apple dividends shape: {apple_dividends.shape}")

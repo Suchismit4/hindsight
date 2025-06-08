@@ -1,0 +1,22 @@
+# Composite Formula Definitions
+#
+# This file demonstrates functional dependence where formulas can call other formulas as functions.
+# These formulas show how complex indicators can be built from simpler ones.
+
+# Simple RSI momentum (centered around zero)
+simple_rsi_momentum:
+  description: "Simple RSI momentum using RSI as a building block"
+  expression: "rsi($price, $window) - 50"
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price data (typically close price)"
+    window:
+      type: "number"
+      description: "RSI period"
+      default: 14
+      validation:
+        min: 2
+        max: 50
+  notes: "Uses RSI formula as a function. Subtracts 50 to center around zero." 

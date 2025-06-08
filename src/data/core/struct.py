@@ -29,7 +29,7 @@ from .util import Rolling
 import warnings
 
 # Suppress xarray accessor registration warnings
-warnings.simplefilter("ignore", xr.core.extensions.AccessorRegistrationWarning)
+# warnings.simplefilter("ignore", xr.core.extensions.AccessorRegistrationWarning)
 
 class DateTimeAccessorBase:
     """

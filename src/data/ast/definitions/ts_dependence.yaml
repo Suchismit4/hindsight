@@ -1,0 +1,35 @@
+# Time Series Dependence Examples
+# These formulas demonstrate how one formula can use the result of another formula as a dataarray variable
+
+# Simple base formula using price momentum
+ts_momentum:
+  description: "Simple time series momentum (current price / price from 5 periods ago - 1)"
+  expression: "$price / shift($price, 5) - 1"
+  return_type: "dataarray"
+  variables:
+    price:
+      type: "dataarray"
+      description: "Price series"
+
+# Formula that depends on ts_momentum as a time series
+ts_signal:
+  description: "Scaled momentum signal based on ts_momentum"
+  expression: "$ts_momentum * 2.0"
+  return_type: "dataarray"
+  variables:
+    ts_momentum:
+      type: "dataarray"
+      description: "Price momentum from ts_momentum formula"
+
+# Formula combining functional and time series dependence
+ts_combined:
+  description: "Combined signal using RSI and time series momentum"
+  expression: "$ts_signal + rsi($price, 14)"
+  return_type: "dataarray"
+  variables:
+    ts_signal:
+      type: "dataarray"
+      description: "Signal from ts_signal formula"
+    price:
+      type: "dataarray"
+      description: "Price series" 

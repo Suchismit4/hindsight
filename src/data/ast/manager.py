@@ -7,7 +7,7 @@ registration.
 """
 
 import os
-from typing import Dict, Any, List, Set, Optional, Union
+from typing import Dict, Any, List, Set, Optional, Union, Callable
 import yaml
 import jsonschema
 from pathlib import Path
@@ -15,8 +15,8 @@ import xarray as xr
 import importlib
 import functools
 
-from .nodes import Node, DataVariable
-from .parser import parse_formula, evaluate_formula
+from .nodes import Node, DataVariable, FunctionCall, Literal
+from .parser import parse_formula, evaluate_formula, extract_functions
 from .functions import register_function
 
 import jax
@@ -48,6 +48,8 @@ class FormulaManager:
         self.formulas: Dict[str, Dict[str, Any]] = {}
         self._registered_functions: Set[str] = set()
         self._module_cache: Dict[str, Any] = {}  # Cache for loaded modules and functions
+        self._formula_functions: Dict[str, Any] = {}  # Cache for compiled formula functions
+        self._dependency_graph: Dict[str, Set[str]] = {}  # Formula dependency tracking
         
         # Load the schema
         schema_path = os.path.join(os.path.dirname(__file__), 'definitions', 'schema.yaml')
@@ -138,6 +140,9 @@ class FormulaManager:
         if 'functions' in definition:
             for func_name in definition['functions']:
                 self._registered_functions.add(func_name)
+                
+        # Analyze dependencies and update dependency graph
+        self._update_dependency_graph(name, definition)
     
     def get_formula(self, name: str) -> Dict[str, Any]:
         """
@@ -155,6 +160,247 @@ class FormulaManager:
         if name not in self.formulas:
             raise KeyError(f"Formula '{name}' not found")
         return self.formulas[name]
+    
+    def _update_dependency_graph(self, formula_name: str, definition: Dict[str, Any]) -> None:
+        """
+        Update the dependency graph by analyzing formula dependencies.
+        
+        Args:
+            formula_name: Name of the formula
+            definition: Formula definition dictionary
+        """
+        try:
+            # Parse the formula to extract function calls
+            ast = parse_formula(definition['expression'])
+            functions_used = extract_functions(definition['expression'])
+            
+            # Find which of these functions are actually other formulas (functional dependence)
+            formula_dependencies = set()
+            for func_name in functions_used:
+                if func_name in self.formulas:
+                    formula_dependencies.add(func_name)
+            
+            # Also check for time series dependencies (dataarray variables that reference other formulas)
+            variables_schema = definition.get('variables', {})
+            for var_name, var_def in variables_schema.items():
+                if var_def.get('type') == 'dataarray':
+                    # Check if this variable name matches another formula name
+                    if var_name in self.formulas and var_name != formula_name:
+                        formula_dependencies.add(var_name)
+            
+            self._dependency_graph[formula_name] = formula_dependencies
+            
+        except Exception as e:
+            print(f"Warning: Could not analyze dependencies for formula '{formula_name}': {e}")
+            self._dependency_graph[formula_name] = set()
+    
+    def _resolve_dependencies(self, formula_name: str, visited: Optional[Set[str]] = None) -> List[str]:
+        """
+        Resolve dependencies for a formula in topological order.
+        
+        Args:
+            formula_name: Name of the formula to resolve dependencies for
+            visited: Set of already visited formulas (for cycle detection)
+            
+        Returns:
+            List of formula names in dependency order (dependencies first)
+            
+        Raises:
+            ValueError: If circular dependencies are detected
+        """
+        if visited is None:
+            visited = set()
+            
+        if formula_name in visited:
+            raise ValueError(f"Circular dependency detected involving formula '{formula_name}'")
+        
+        if formula_name not in self._dependency_graph:
+            return [formula_name]
+        
+        visited.add(formula_name)
+        dependencies = []
+        
+        # First, resolve all dependencies
+        for dep in self._dependency_graph[formula_name]:
+            if dep in self.formulas:  # Only process formula dependencies
+                dep_order = self._resolve_dependencies(dep, visited.copy())
+                for dep_formula in dep_order:
+                    if dep_formula not in dependencies:
+                        dependencies.append(dep_formula)
+        
+        # Finally, add the formula itself
+        if formula_name not in dependencies:
+            dependencies.append(formula_name)
+            
+        return dependencies
+    
+    def _get_evaluation_order(self, formula_names: List[str]) -> List[str]:
+        """
+        Get the evaluation order for a list of formulas, including their dependencies.
+        
+        Args:
+            formula_names: List of formula names to evaluate
+            
+        Returns:
+            List of formula names in evaluation order (dependencies first)
+            
+        Raises:
+            ValueError: If circular dependencies are detected
+        """
+        all_formulas = set()
+        
+        # Collect all formulas and their dependencies
+        for formula_name in formula_names:
+            if formula_name in self.formulas:
+                dependency_chain = self._resolve_dependencies(formula_name)
+                all_formulas.update(dependency_chain)
+        
+        # Return the formulas in dependency order
+        # We need to do a topological sort of all collected formulas
+        result = []
+        remaining = set(all_formulas)
+        
+        while remaining:
+            # Find formulas with no remaining dependencies
+            ready = set()
+            for formula in remaining:
+                dependencies = self._dependency_graph.get(formula, set())
+                # Check if all dependencies are already in the result
+                if dependencies.issubset(set(result)):
+                    ready.add(formula)
+            
+            if not ready:
+                # No formulas are ready - there must be a circular dependency
+                raise ValueError(f"Circular dependency detected among formulas: {remaining}")
+            
+            # Add ready formulas to result (in sorted order for consistency)
+            for formula in sorted(ready):
+                result.append(formula)
+                remaining.remove(formula)
+        
+        return result
+    
+    def _compile_formula_as_function(self, formula_name: str) -> Callable:
+        """
+        Compile a formula into a callable function that can be used by other formulas.
+        
+        Args:
+            formula_name: Name of the formula to compile
+            
+        Returns:
+            Callable function that evaluates the formula
+        """
+        if formula_name in self._formula_functions:
+            return self._formula_functions[formula_name]
+        
+        formula_def = self.get_formula(formula_name)
+        
+        def compiled_formula(*args, **kwargs):
+            """
+            Compiled formula function.
+            
+            Args:
+                *args: Positional arguments (for AST function calls)
+                **kwargs: Keyword arguments (variables + context)
+                
+            Returns:
+                Result of formula evaluation
+            """
+            # If called with positional arguments, match them to variable names
+            variables_schema = formula_def.get('variables', {})
+            var_names = list(variables_schema.keys())
+            
+            # Create evaluation context from kwargs first
+            context = kwargs.copy()
+            
+            # Add positional arguments to context
+            for i, arg in enumerate(args):
+                if i < len(var_names):
+                    context[var_names[i]] = arg
+                    
+            # If _dataset is not in context, we can't evaluate the formula
+            if '_dataset' not in context:
+                raise ValueError(f"Formula function '{formula_name}' requires '_dataset' in context but it was not found")
+            
+            # Add default values for missing variables
+            for var_name, var_def in variables_schema.items():
+                if var_name not in context and 'default' in var_def:
+                    context[var_name] = var_def['default']
+            
+            # Process modules if any
+            context = self._process_modules(formula_name, context)
+            
+            # Add formula functions to context (for dependencies)
+            # Pass the current dataset if available, and exclude current formula to prevent recursion
+            dataset = context.get('_dataset')
+            exclude_formulas = {formula_name}  # Exclude current formula to prevent circular dependency
+            formula_function_context = self._get_formula_function_context(dataset, exclude_formulas)
+            context.update(formula_function_context)
+            
+            # Also include built-in functions
+            from .functions import get_function_context
+            builtin_context = get_function_context()
+            context.update(builtin_context)
+            
+            # Evaluate the formula
+            try:
+                result, _ = evaluate_formula(formula_def['expression'], context, formula_name=formula_name)
+                return result
+            except Exception as e:
+                raise ValueError(f"Error evaluating compiled formula '{formula_name}': {str(e)}")
+        
+        # Cache the compiled function
+        self._formula_functions[formula_name] = compiled_formula
+        return compiled_formula
+    
+    def _get_formula_function_context(self, dataset: Optional[xr.Dataset] = None, exclude_formulas: Optional[Set[str]] = None) -> Dict[str, Callable]:
+        """
+        Get a context dictionary containing all compiled formula functions.
+        
+        Args:
+            dataset: Optional dataset to pass to formula functions
+            exclude_formulas: Set of formula names to exclude (prevents circular dependencies)
+        
+        Returns:
+            Dictionary mapping function names to compiled formulas
+        """
+        if exclude_formulas is None:
+            exclude_formulas = set()
+            
+        context = {}
+        
+        # Ensure all formulas are compiled
+        for formula_name in self.formulas:
+            if formula_name in exclude_formulas:
+                continue
+                
+            if formula_name not in self._formula_functions:
+                try:
+                    self._compile_formula_as_function(formula_name)
+                except Exception as e:
+                    print(f"Warning: Could not compile formula '{formula_name}' as function: {e}")
+                    continue
+        
+        # Create wrapped functions that include the dataset context
+        for formula_name, func in self._formula_functions.items():
+            if formula_name in exclude_formulas:
+                continue
+                
+            if dataset is not None:
+                def create_wrapped_func(original_func, ds):
+                    def wrapped_func(*args, **kwargs):
+                        # Ensure _dataset is in the context
+                        kwargs['_dataset'] = ds
+                        return original_func(*args, **kwargs)
+                    return wrapped_func
+                
+                wrapped_func = create_wrapped_func(func, dataset)
+                context[f"_func_{formula_name}"] = wrapped_func  # Add with _func_ prefix for AST compatibility
+            else:
+                # No dataset provided - use original function
+                context[f"_func_{formula_name}"] = func  # Add with _func_ prefix for AST compatibility
+            
+        return context
     
     def _load_module(self, module_path: str, function_name: str, cache_key: str) -> Any:
         """
@@ -258,16 +504,23 @@ class FormulaManager:
     
     def evaluate(
         self,
-        name: Union[str, List[str]],
+        name: Union[str, List[str], Dict[str, Union[Dict[str, Any], List[Dict[str, Any]]]]],
         context: Dict[str, Any],
         validate_inputs: bool = True
     ) -> Union[Any, xr.Dataset]:
         """
         Evaluate one or more formulas with the given context.
         
+        This method is now streamlined to use evaluate_bulk for all cases,
+        providing a unified evaluation pathway with formula function support.
+        
         Args:
-            name: Name of the formula or list of formula names
-            context: Dictionary of variable values
+            name: Can be:
+                - str: Single formula name (backward compatible)
+                - List[str]: List of formula names with shared context (backward compatible)
+                - Dict[str, Union[Dict, List[Dict]]]: Formula names mapped to config(s)
+                  Example: {"wma": {"window": 10}, "rsi": [{"window": 14}, {"window": 21}]}
+            context: Dictionary of variable values shared across all evaluations
             validate_inputs: Whether to validate inputs against the schema
             
         Returns:
@@ -278,117 +531,352 @@ class FormulaManager:
             KeyError: If formula doesn't exist
             ValueError: If inputs are invalid or evaluation fails
         """
-        # Handle single formula (backward compatibility)
+        # Normalize all inputs to the dictionary format used by evaluate_bulk
         if isinstance(name, str):
-            formula = self.get_formula(name)
-                
-            # Process modules first (if any) to generate dynamic values
-            context = self._process_modules(name, context)
-            
-            if validate_inputs:
-                self._validate_inputs(name, context)
-            
-            try:
-                result, _ = evaluate_formula(formula['expression'], context, formula_name=name)
-                # TODO: Validate result type matches formula's return_type
-                return result
-            except Exception as e:
-                raise ValueError(f"Error evaluating formula '{name}': {str(e)}")
+            # Single formula - convert to dict format
+            formula_configs = {name: [{}]}
+            result_ds = self.evaluate_bulk(formula_configs, context, validate_inputs)
+            # Return the single result for backward compatibility
+            if name in result_ds.data_vars:
+                return result_ds[name]
+            else:
+                # If there's only one result, return it
+                data_vars = list(result_ds.data_vars.keys())
+                if len(data_vars) == 1:
+                    return result_ds[data_vars[0]]
+                else:
+                    return result_ds
         
-        # Handle multiple formulas
         elif isinstance(name, list):
+            # List of formulas - convert to dict format
+            formula_configs = {formula_name: [{}] for formula_name in name}
+            return self.evaluate_bulk(formula_configs, context, validate_inputs)
+        
+        elif isinstance(name, dict):
+            # Dictionary format - pass through to evaluate_bulk
             return self.evaluate_bulk(name, context, validate_inputs)
         
         else:
-            raise TypeError(f"Expected str or List[str] for name, got {type(name)}")
+            raise TypeError(f"Expected str, List[str], or Dict for name, got {type(name)}")
 
     def evaluate_bulk(
         self,
-        formula_names: List[str],
+        formula_names: Union[List[str], Dict[str, Union[Dict[str, Any], List[Dict[str, Any]]]]],
         context: Dict[str, Any],
         validate_inputs: bool = True,
         jit_compile: bool = True
     ) -> xr.Dataset:
         """
-        Evaluate multiple formulas efficiently in bulk.
-        
-        This method parses all formulas upfront and evaluates them. The individual
-        functions (like wma, sma, etc.) are already JIT-compiled, so we don't need
-        to JIT compile the orchestration layer.
+        Evaluate multiple formulas efficiently in bulk, with support for multiple configurations.
         
         Args:
-            formula_names: List of formula names to evaluate
-            context: Dictionary of variable values and functions
+            formula_names: Can be:
+                - List[str]: List of formula names (backward compatible)
+                - Dict[str, Union[Dict, List[Dict]]]: Formula names mapped to config(s)
+                  Example: {
+                      "wma": {"window": 10},  # Single config
+                      "rsi": [{"window": 14}, {"window": 21}],  # Multiple configs
+                      "alma": [
+                          {"window": 10, "offset": 0.85},
+                          {"window": 20, "offset": 0.9}
+                      ]
+                  }
+            context: Dictionary of variable values and functions shared across all evaluations
             validate_inputs: Whether to validate inputs against schemas
             jit_compile: Whether to enable JIT compilation (individual functions are already JIT compiled)
             
         Returns:
-            xarray Dataset containing all formula results as data variables
+            xarray Dataset containing all formula results as data variables.
+            When multiple configs are used, results are named as:
+            - Single config: formula_name (e.g., "wma", "rsi")
+            - Multiple configs: formula_name + parameter suffix (e.g., "wma_w10", "rsi_w14_w21")
             
         Raises:
             KeyError: If any formula doesn't exist
             ValueError: If inputs are invalid or evaluation fails
         """
-        if not formula_names:
-            raise ValueError("formula_names cannot be empty")
+        # Normalize input to dictionary format
+        if isinstance(formula_names, list):
+            # Convert list to dict with empty configs for backward compatibility
+            formula_configs = {name: [{}] for name in formula_names}
+        else:
+            # Normalize dict values to always be lists
+            formula_configs = {}
+            for formula_name, configs in formula_names.items():
+                if isinstance(configs, dict):
+                    formula_configs[formula_name] = [configs]
+                elif isinstance(configs, list):
+                    formula_configs[formula_name] = configs
+                else:
+                    raise ValueError(f"Invalid config type for formula '{formula_name}': {type(configs)}")
+
+        if not formula_configs:
+            raise ValueError("formula_names/configs cannot be empty")
 
         if '_dataset' not in context or not isinstance(context['_dataset'], xr.Dataset):
             raise ValueError("Evaluation context must contain the input xarray Dataset under the key '_dataset'.")
 
         input_ds = context['_dataset']
         
-        # Validate all formulas exist and parse their ASTs upfront
+        # Add formula functions to context for dependency support
+        formula_function_context = self._get_formula_function_context(input_ds)
+        context.update(formula_function_context)
+        
+        # Add built-in functions to context  
+        from .functions import get_function_context
+        builtin_context = get_function_context()
+        context.update(builtin_context)
+        
+
+        
+        # Parse all formulas once (reuse for multiple configs)
         parsed_formulas = {}
-        for name in formula_names:
-            if name not in self.formulas:
-                raise KeyError(f"Formula '{name}' not found")
+        formula_definitions = {}
             
-            formula_def = self.get_formula(name)
+        for formula_name in formula_configs:
+            if formula_name not in self.formulas:
+                raise KeyError(f"Formula '{formula_name}' not found")
             
-            # Validate inputs if requested
-            if validate_inputs:
-                self._validate_inputs(name, context)
+            formula_def = self.get_formula(formula_name)
+            formula_definitions[formula_name] = formula_def
             
             # Parse the formula into AST
             try:
                 ast_node = parse_formula(formula_def['expression'])
-                parsed_formulas[name] = ast_node
+                parsed_formulas[formula_name] = ast_node
             except Exception as e:
-                raise ValueError(f"Error parsing formula '{name}': {str(e)}")
+                raise ValueError(f"Error parsing formula '{formula_name}': {str(e)}")
         
-        # Evaluate all formulas (no orchestration-level JIT compilation needed)
-        # The individual functions (wma, sma, etc.) are already JIT compiled
+        # Determine evaluation order based on dependencies
+        evaluation_order = self._get_evaluation_order(list(formula_configs.keys()))
+        
+        # Keep track of computed formula results that can be used as time series dependencies
+        computed_results = {}
+        
+        # Evaluate all formula instances in dependency order
         results = {}
-        for name, ast_node in parsed_formulas.items():
-            try:
+        
+        for formula_name in evaluation_order:
+            if formula_name not in formula_configs:
+                # This formula was added due to dependencies but not explicitly requested
+                # Evaluate it with default config to make it available for dependents
+                config_list = [{}]
+            else:
+                config_list = formula_configs[formula_name]
+            
+            formula_def = formula_definitions.get(formula_name)
+            if not formula_def:
+                # Load formula definition if not already loaded (for dependencies)
+                if formula_name not in self.formulas:
+                    continue  # Skip if formula doesn't exist
+                formula_def = self.get_formula(formula_name)
+                formula_definitions[formula_name] = formula_def
+                
+                # Parse the formula AST if not already parsed
+                if formula_name not in parsed_formulas:
+                    try:
+                        ast_node = parse_formula(formula_def['expression'])
+                        parsed_formulas[formula_name] = ast_node
+                    except Exception as e:
+                        print(f"Warning: Could not parse dependency formula '{formula_name}': {e}")
+                        continue
+            
+            ast_node = parsed_formulas[formula_name]
+            
+            for config_idx, config in enumerate(config_list):
+                # Merge formula-specific config with base context
+                formula_context = context.copy()
+                formula_context.update(config)
+                
+                # Add computed formula results to the dataset for time series dependencies
+                if computed_results:
+                    enhanced_dataset = formula_context['_dataset'].copy()
+                    for dep_name, dep_result in computed_results.items():
+                        if isinstance(dep_result, xr.DataArray):
+                            enhanced_dataset[dep_name] = dep_result
+                    formula_context['_dataset'] = enhanced_dataset
+                
+                # Add default values for any missing variables
+                variables_schema = formula_def.get('variables', {})
+                for var_name, var_def in variables_schema.items():
+                    if var_name not in formula_context and 'default' in var_def:
+                        formula_context[var_name] = var_def['default']
+                
                 # Process modules for this formula to generate dynamic values
-                formula_context = self._process_modules(name, context)
-                result = ast_node.evaluate(formula_context)
-                results[name] = result
-            except Exception as e:
-                raise ValueError(f"Error evaluating formula '{name}': {str(e)}")
+                formula_context = self._process_modules(formula_name, formula_context)
+                
+                # Validate inputs if requested
+                if validate_inputs:
+                    self._validate_inputs(formula_name, formula_context)
+                
+                try:
+                    result = ast_node.evaluate(formula_context)
+                    
+                    # Generate result name based on configuration
+                    if len(config_list) == 1 and not config:
+                        # Single config with no overrides - use formula name
+                        result_name = formula_name
+                    else:
+                        # Multiple configs or overrides - generate unique name
+                        result_name = self._generate_result_name(
+                            formula_name, 
+                            config, 
+                            formula_def.get('variables', {}),
+                            config_idx if len(config_list) > 1 else None
+                        )
+                        
+                        # Check if this config only contains default values
+                        # If so, make it the primary version (no suffix)
+                        variables_schema = formula_def.get('variables', {})
+                        all_defaults = True
+                        for param_name, param_value in config.items():
+                            if param_name.startswith('_') or param_name == 'price' or param_name == 'lag':
+                                continue
+                            default_value = variables_schema.get(param_name, {}).get('default')
+                            if default_value is None or param_value != default_value:
+                                all_defaults = False
+                                break
+                        
+                        # If all parameters match defaults and we haven't used the formula name yet
+                        if all_defaults and formula_name not in results:
+                            result_name = formula_name
+                    
+                    # Handle lag parameter if specified
+                    lag_param = config.get('lag')
+                    if lag_param is not None:
+                        # Ensure lag is a list for consistent processing
+                        lag_values = lag_param if isinstance(lag_param, list) else [lag_param]
+                        
+                        # Process each lag value by creating a shifted AST
+                        for lag_val in lag_values:
+                            # Create a new AST that wraps the original formula with shift()
+                            # shift(original_expression, lag_value)
+                            shifted_ast = FunctionCall(
+                                name='shift',
+                                args=[
+                                    ast_node,  # The original formula AST
+                                    Literal(value=float(lag_val))  # Lag as a static literal
+                                ]
+                            )
+                            
+                            # Evaluate the shifted AST in the same context
+                            try:
+                                lagged_result = shifted_ast.evaluate(formula_context)
+                                
+                                # Generate name with lag suffix
+                                lag_suffix = f"_lag{lag_val}" if lag_val >= 0 else f"_lead{-lag_val}"
+                                lagged_name = f"{result_name}{lag_suffix}"
+                                
+                                results[lagged_name] = lagged_result
+                            except Exception as e:
+                                raise ValueError(f"Error applying lag {lag_val} to formula '{formula_name}': {str(e)}")
+                    else:
+                        # No lag specified - add the result as is
+                        results[result_name] = result
+                        
+                        # Track this result for potential use as time series dependency
+                        # Use the formula name (not result_name) as the key for dependency resolution
+                        if isinstance(result, xr.DataArray):
+                            # Track all results as potential dependencies, but use the result_name
+                            # as the key to ensure we're tracking the correct result instance
+                            computed_results[formula_name] = result
+                    
+                except Exception as e:
+                    config_str = f" with config {config}" if config else ""
+                    raise ValueError(f"Error evaluating formula '{formula_name}'{config_str}: {str(e)}")
         
-        # Construct output dataset with all results
-        output_ds = input_ds.copy()
+        # Construct output dataset with only computed results
+        # Create a new dataset with same coordinates but no data variables from input
+        output_ds = xr.Dataset(coords=input_ds.coords)
         
-        for name, result in results.items():
+        for result_name, result in results.items():
             if isinstance(result, xr.DataArray):
                 # Set the name on the DataArray
-                result.name = name
+                result.name = result_name
                 # Add to the output dataset
-                output_ds[name] = result
+                output_ds[result_name] = result
             elif isinstance(result, xr.Dataset):
                 # If the result is a Dataset, merge its variables
                 for var_name, var_data in result.data_vars.items():
-                    # Prefix with formula name to avoid conflicts
-                    prefixed_name = f"{name}_{var_name}"
+                    # Prefix with result name to avoid conflicts
+                    prefixed_name = f"{result_name}_{var_name}"
                     output_ds[prefixed_name] = var_data
             else:
                 # For scalar results, convert to DataArray
-                scalar_da = xr.DataArray(result, name=name)
-                output_ds[name] = scalar_da
+                scalar_da = xr.DataArray(result, name=result_name)
+                output_ds[result_name] = scalar_da
         
         return output_ds
+    
+    def _generate_result_name(
+        self, 
+        formula_name: str, 
+        config: Dict[str, Any], 
+        variables_schema: Dict[str, Any],
+        config_idx: Optional[int] = None
+    ) -> str:
+        """
+        Generate a unique result name based on formula name and configuration.
+        
+        Args:
+            formula_name: Base formula name
+            config: Configuration overrides
+            variables_schema: Schema of formula variables (to get defaults)
+            config_idx: Optional index when multiple configs exist
+            
+        Returns:
+            Unique result name
+        """
+        if not config:
+            # No overrides, but multiple configs exist
+            if config_idx is not None:
+                return f"{formula_name}_{config_idx}"
+            return formula_name
+        
+        # Build suffix from parameters that differ from defaults
+        suffix_parts = []
+        
+        for param_name, param_value in sorted(config.items()):
+            # Skip internal parameters, dataset references, and lag (handled separately)
+            if param_name.startswith('_') or param_name == 'price' or param_name == 'lag':
+                continue
+                
+            # Get default value from schema
+            default_value = None
+            if param_name in variables_schema:
+                default_value = variables_schema[param_name].get('default')
+            
+            # Include parameter if it differs from default or no default exists
+            if default_value is None or param_value != default_value:
+                # Format the value appropriately
+                if isinstance(param_value, (int, float)):
+                    # For numbers, use simple representation
+                    if isinstance(param_value, float) and param_value.is_integer():
+                        value_str = str(int(param_value))
+                    else:
+                        value_str = str(param_value).replace('.', 'p')
+                elif isinstance(param_value, bool):
+                    value_str = 'T' if param_value else 'F'
+                elif isinstance(param_value, str):
+                    # For strings, use first few characters
+                    value_str = param_value[:3]
+                else:
+                    # For other types, use a hash
+                    value_str = str(hash(str(param_value)))[:4]
+                
+                # Create abbreviated parameter name
+                param_abbrev = ''.join(c for c in param_name if c.isupper() or param_name.index(c) == 0).lower()
+                if not param_abbrev:
+                    param_abbrev = param_name[:1]
+                    
+                suffix_parts.append(f"{param_abbrev}{value_str}")
+        
+        if suffix_parts:
+            return f"{formula_name}_{'_'.join(suffix_parts)}"
+        elif config_idx is not None:
+            return f"{formula_name}_{config_idx}"
+        else:
+            return formula_name
 
     def evaluate_all_loaded(
         self,
@@ -443,12 +931,22 @@ class FormulaManager:
 
         for var_name, var_def in variables_schema.items():
             # Check if variable is provided or has a default
-            if var_name not in context and 'default' not in var_def:
+            # For time series dependencies (formulas), they will be resolved during evaluation
+            is_ts_dependency = (var_def.get('type') == 'dataarray' and 
+                              var_name in self.formulas and var_name != name)
+            
+            if var_name not in context and 'default' not in var_def and not is_ts_dependency:
                 raise ValueError(f"Missing required variable '{var_name}' for formula '{name}'.")
 
             # Determine the value to validate (either from context or default)
             # If var_name is not in context, var_def['default'] must exist (checked above for required vars)
             value_to_validate = context.get(var_name, var_def.get('default'))
+            
+            # For time series dependencies, use the formula name as the key
+            is_ts_dependency = (var_def.get('type') == 'dataarray' and 
+                              var_name in self.formulas and var_name != name)
+            if is_ts_dependency:
+                value_to_validate = var_name  # Use formula name as the key
 
             var_type = var_def.get('type')
 
@@ -461,6 +959,12 @@ class FormulaManager:
                 if dataset_in_context is None and has_dataarray_var:
                     # This case should ideally not be reached if the initial _dataset check is correct
                     raise ValueError("Internal error: _dataset not verified before dataarray variable check.")
+                
+                # Check if this is a time series dependency (references another formula)
+                if is_ts_dependency:
+                    # This is a formula dependency - it will be resolved during evaluation
+                    # Skip the dataset key check for now as the dependency will be computed
+                    continue
                 
                 if value_to_validate not in dataset_in_context:
                     raise ValueError(f"Key '{value_to_validate}' (for variable '{var_name}') not found in the provided '_dataset' "
@@ -540,19 +1044,153 @@ class FormulaManager:
     
     def get_formula_dependencies(self, name: str) -> Set[str]:
         """
-        Get the set of function names that a formula depends on.
+        Get the set of formula names that a formula depends on.
         
         Args:
             name: Name of the formula
             
         Returns:
-            Set of function names used by the formula
+            Set of formula names used by the formula
+            
+        Raises:
+            KeyError: If formula doesn't exist
+        """
+        if name not in self.formulas:
+            raise KeyError(f"Formula '{name}' not found")
+        
+        return self._dependency_graph.get(name, set())
+    
+    def get_dependency_chain(self, name: str) -> List[str]:
+        """
+        Get the full dependency chain for a formula in evaluation order.
+        
+        Args:
+            name: Name of the formula
+            
+        Returns:
+            List of formula names in dependency order (dependencies first)
+            
+        Raises:
+            KeyError: If formula doesn't exist
+            ValueError: If circular dependencies are detected
+        """
+        if name not in self.formulas:
+            raise KeyError(f"Formula '{name}' not found")
+            
+        return self._resolve_dependencies(name)
+    
+    def list_formula_functions(self) -> List[str]:
+        """
+        Get a list of formulas that are available as functions.
+        
+        Returns:
+            List of formula names that can be used as functions
+        """
+        return sorted(self._formula_functions.keys())
+    
+    def compile_all_formulas_as_functions(self) -> None:
+        """
+        Pre-compile all formulas as functions for performance.
+        
+        This can be called to ensure all formulas are ready to be used
+        as functions in other formulas.
+        """
+        for formula_name in self.formulas:
+            try:
+                self._compile_formula_as_function(formula_name)
+            except Exception as e:
+                print(f"Warning: Could not compile formula '{formula_name}' as function: {e}")
+    
+    def get_compiled_formula_function(self, name: str) -> Callable:
+        """
+        Get a compiled formula function by name.
+        
+        Args:
+            name: Name of the formula
+            
+        Returns:
+            Compiled formula function
+            
+        Raises:
+            KeyError: If formula doesn't exist
+            ValueError: If formula cannot be compiled
+        """
+        if name not in self.formulas:
+            raise KeyError(f"Formula '{name}' not found")
+            
+        return self._compile_formula_as_function(name)
+    
+    def get_function_dependencies(self, name: str) -> Set[str]:
+        """
+        Get the set of built-in function names that a formula depends on.
+        
+        Args:
+            name: Name of the formula
+            
+        Returns:
+            Set of built-in function names used by the formula
             
         Raises:
             KeyError: If formula doesn't exist
         """
         formula = self.get_formula(name)
-        return set(formula.get('functions', {}).keys()) 
+        return set(formula.get('functions', {}).keys())
+    
+    def get_time_series_dependencies(self, name: str) -> Set[str]:
+        """
+        Get the set of formula names that a formula depends on as time series (dataarray variables).
+        
+        Args:
+            name: Name of the formula
+            
+        Returns:
+            Set of formula names used as dataarray variables by the formula
+            
+        Raises:
+            KeyError: If formula doesn't exist
+        """
+        if name not in self.formulas:
+            raise KeyError(f"Formula '{name}' not found")
+        
+        formula = self.get_formula(name)
+        variables_schema = formula.get('variables', {})
+        ts_dependencies = set()
+        
+        for var_name, var_def in variables_schema.items():
+            if var_def.get('type') == 'dataarray' and var_name in self.formulas and var_name != name:
+                ts_dependencies.add(var_name)
+        
+        return ts_dependencies
+    
+    def get_functional_dependencies(self, name: str) -> Set[str]:
+        """
+        Get the set of formula names that a formula depends on as functions.
+        
+        Args:
+            name: Name of the formula
+            
+        Returns:
+            Set of formula names called as functions by the formula
+            
+        Raises:
+            KeyError: If formula doesn't exist
+        """
+        if name not in self.formulas:
+            raise KeyError(f"Formula '{name}' not found")
+        
+        formula = self.get_formula(name)
+        
+        try:
+            functions_used = extract_functions(formula['expression'])
+            functional_deps = set()
+            
+            for func_name in functions_used:
+                if func_name in self.formulas:
+                    functional_deps.add(func_name)
+            
+            return functional_deps
+        except Exception:
+            return set() 
 
     def load_default_formulas(self) -> None:
         """
@@ -563,5 +1201,22 @@ class FormulaManager:
         default_dir = os.path.join(os.path.dirname(__file__), 'definitions')
         if os.path.exists(default_dir):
             self.load_directory(default_dir)
+            # After loading all formulas, update dependency graphs
+            self._rebuild_dependency_graph()
         else:
-            print(f"Warning: Default definitions directory not found at {default_dir}") 
+            print(f"Warning: Default definitions directory not found at {default_dir}")
+    
+    def _rebuild_dependency_graph(self) -> None:
+        """
+        Rebuild the entire dependency graph after loading all formulas.
+        
+        This is needed because formula dependencies can only be resolved
+        after all formulas are loaded.
+        """
+        # Clear existing dependency graph
+        self._dependency_graph.clear()
+        self._formula_functions.clear()
+        
+        # Rebuild dependency graph for all formulas
+        for formula_name, definition in self.formulas.items():
+            self._update_dependency_graph(formula_name, definition) 

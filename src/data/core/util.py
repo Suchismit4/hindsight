@@ -223,7 +223,8 @@ class Loader:
     
     DEFAULT_PATHS = {
         "msenames": "/wrds/crsp/sasdata/a_stock/msenames.sas7bdat",
-        "delistings": "/wrds/crsp/sasdata/a_stock/msedelist.sas7bdat"
+        "delistings": "/wrds/crsp/sasdata/a_stock/msedelist.sas7bdat",
+        "dist": "/wrds/crsp/sasdata/a_stock/dsedist.sas7bdat",
     }
     
     @classmethod
@@ -306,6 +307,26 @@ class Loader:
         Returns:
             pd.Series: Date column in datetime format.
         """
+        # # Debug: Print information about the SAS date column
+        # print(f"DEBUG: convert_sas_date called with column dtype: {sas_date_col.dtype}")
+        # print(f"DEBUG: Column shape: {sas_date_col.shape}")
+        # print(f"DEBUG: Number of NaN values: {sas_date_col.isna().sum()}")
+        # print(f"DEBUG: Number of infinite values: {np.isinf(sas_date_col).sum() if pd.api.types.is_numeric_dtype(sas_date_col) else 'N/A (non-numeric)'}")
+        # print(f"DEBUG: First 10 values:\n{sas_date_col.head(10)}")
+        # print(f"DEBUG: Unique values (first 20): {sas_date_col.unique()[:20]}")
+        # print(f"DEBUG: Min value: {sas_date_col.min()}")
+        # print(f"DEBUG: Max value: {sas_date_col.max()}")
+        
+        # Check for problematic values
+        problematic_mask = sas_date_col.isna() | np.isinf(sas_date_col)
+        # if problematic_mask.any():
+        #     print(f"DEBUG: Found {problematic_mask.sum()} problematic values (NaN or inf)")
+        #     print(f"DEBUG: Problematic values:\n{sas_date_col[problematic_mask].head(10)}")
+        #     print(f"DEBUG: Indices of problematic values: {sas_date_col[problematic_mask].index[:10].tolist()}")
+        
+        if problematic_mask.any():
+            raise ValueError(f"Problematic values found in SAS date column: {sas_date_col[problematic_mask].head(10).tolist()}")
+        
         sas_epoch = pd.to_datetime(epoch)
         return sas_epoch + pd.to_timedelta(sas_date_col.astype(int), unit='D')
     

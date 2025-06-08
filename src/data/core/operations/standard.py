@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
+import numpy as np
 
 @partial(jax.jit, static_argnames=['window_size'])
 def mean(i: int, carry, block: jnp.ndarray, window_size: int):
@@ -143,7 +144,8 @@ def ema(i: int, carry, block: jnp.ndarray, window_size: int):
     
     This function is designed to work with JAX's JIT compilation and
     the u_roll method defined in the Tensor class. It computes the EMA
-    efficiently over a rolling window of data.
+    efficiently over a rolling window of data using the pandas-compatible
+    alpha formula: alpha = 2 / (window_size + 1).
     
     Args:
     i (int): Current index in the time series
@@ -162,19 +164,62 @@ def ema(i: int, carry, block: jnp.ndarray, window_size: int):
                                                             block.shape[2]).sum(axis=0)
     
         
-        return (current_window_sum * (1/window_size), current_window_sum * (1/window_size))
+        return (current_window_sum * (2 / (window_size + 1)), current_window_sum * (2 / (window_size + 1)))
     
     # Get the current price
     current_price = block[i]
     
-    # Compute the new EMA
+    # Compute the new EMA using pandas-compatible alpha formula
     # EMA = α * current_price + (1 - α) * previous_EMA
-    # where α = 1 / (window_size)
-    alpha = 1 / window_size
+    # where α = 2 / (window_size + 1) (pandas formula)
+    alpha = 2 / (window_size + 1)
     
     new_ema = alpha * current_price + (1 - alpha) * carry
         
     return (new_ema, new_ema)
+
+# A function to compute Exponential Moving Average (EMA)
+# This function will be used with the u_roll method for efficient computation
+@partial(jax.jit, static_argnames=['window_size'])
+def rma(i: int, carry, block: jnp.ndarray, window_size: int):
+    """
+    Compute the Relative Moving Average (RMA) for a given window.
+    
+    This function is designed to work with JAX's JIT compilation and
+    the u_roll method defined in the Tensor class. It computes the EMA
+    efficiently over a rolling window of data using the pandas-compatible
+    alpha formula: alpha = 1 / window_size.
+    
+    Args:
+    i (int): Current index in the time series
+    state (tuple): Contains current values, carry (previous RMA), and data block
+    window_size (int): Size of the moving window
+    
+    Returns:
+    tuple: Updated state (new RMA value, carry, and data block)
+    """
+    
+    # Initialize the first value
+    if carry is None:
+        # Compute the sum of the first window
+        current_window_sum = block[:window_size].reshape(-1, 
+                                                            block.shape[1], 
+                                                            block.shape[2]).sum(axis=0)
+    
+        
+        return (current_window_sum * (1 / window_size), current_window_sum * (1 / window_size))
+    
+    # Get the current price
+    current_price = block[i]
+    
+    # Compute the new RMA using pandas-compatible alpha formula
+    # RMA = α * current_price + (1 - α) * previous_RMA
+    # where α = 1 / window_size (pandas formula)
+    alpha = 1 / window_size
+    
+    new_rma = alpha * current_price + (1 - alpha) * carry
+        
+    return (new_rma, new_rma)
 
 @partial(jax.jit, static_argnames=['window_size'])
 def gain(i: int, carry, block: jnp.ndarray, window_size: int):

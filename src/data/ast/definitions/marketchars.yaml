@@ -1,0 +1,330 @@
+# Market Characteristics
+#
+# This file defines common market characteristics formulas using the AST grammar.
+# Each formula is defined with its variables, functions, and validation rules.
+
+
+market_equity:
+  description: "Market equity"
+  expression: "$me"
+  return_type: "dataarray"
+  variables:
+    me:
+      type: "dataarray"
+      description: "CRSP market equity, stored in ds['me']"
+
+
+prc_adj:
+  description: "Adjusted price at period-end"
+  expression: "$prc / $cfacpr"
+  return_type: "dataarray"
+  variables:
+    prc:
+      type: "dataarray"
+      description: "Raw price at period-end"
+    cfacpr:
+      type: "dataarray"
+      description: "Cumulative price adjustment factor"
+
+price_ret:
+  description: "Price-only return (no distributions)"
+  expression: "$prc_adj / shift($prc_adj, 1) - 1"
+  return_type: "dataarray"
+  variables:
+    prc_adj:
+      type: "dataarray"
+      description: "Adjusted price data"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+
+dividend:
+  description: "Inferred total dollar dividend per share from total return"
+  expression: "($ret - $price_ret) * shift($prc_adj, 1)"
+  return_type: "dataarray"
+  variables:
+    ret:
+      type: "dataarray"
+      description: "Total return including distributions"
+    price_ret:
+      type: "dataarray"
+      description: "Price-only return from price_ret formula"
+    prc_adj:
+      type: "dataarray"
+      description: "Adjusted price data"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+dividend_times_shares:
+  description: "Total dollar dividends distributed (dividend per share * shares outstanding)"
+  expression: "$dividend * $shrout"
+  return_type: "dataarray"
+  variables:
+    dividend:
+      type: "dataarray"
+      description: "Dividend per share from dividend formula"
+    shrout:
+      type: "dataarray"
+      description: "CRSP shares outstanding ('shrout')"
+
+
+div1m_me:
+  description: "One-period dividend yield (total dividend / ME)"
+  expression: "rolling_sum($dividend_times_shares, 1) / $me"
+  return_type: "dataarray"
+  variables:
+    dividend_times_shares:
+      type: "dataarray"
+      description: "Total dividends from dividend_times_shares formula"
+    me:
+      type: "dataarray"
+      description: "Market equity"
+  functions:
+    rolling_sum:
+      description: "Rolling sum over last N valid periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Number of periods"
+
+div3m_me:
+  description: "Three-period dividend yield"
+  expression: "rolling_sum($dividend_times_shares, 3) / $me"
+  return_type: "dataarray"
+  variables:
+    dividend_times_shares:
+      type: "dataarray"
+      description: "Total dividends from dividend_times_shares formula"
+    me:
+      type: "dataarray"
+      description: "Market equity"
+  functions:
+    rolling_sum:
+      description: "Rolling sum over last N valid periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Number of periods"
+
+div6m_me:
+  description: "Six-period dividend yield"
+  expression: "rolling_sum($dividend_times_shares, 6) / $me"
+  return_type: "dataarray"
+  variables:
+    dividend_times_shares:
+      type: "dataarray"
+      description: "Total dividends from dividend_times_shares formula"
+    me:
+      type: "dataarray"
+      description: "Market equity"
+  functions:
+    rolling_sum:
+      description: "Rolling sum over last N valid periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Number of periods"
+
+div12m_me:
+  description: "Twelve-period dividend yield"
+  expression: "rolling_sum($dividend_times_shares, 12) / $me"
+  return_type: "dataarray"
+  variables:
+    dividend_times_shares:
+      type: "dataarray"
+      description: "Total dividends from dividend_times_shares formula"
+    me:
+      type: "dataarray"
+      description: "Market equity"
+  functions:
+    rolling_sum:
+      description: "Rolling sum over last N valid periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "window"
+          type: "number"
+          description: "Number of periods"
+
+
+shares_adj:
+  description: "Adjusted shares outstanding = shrout * cfacshr"
+  expression: "$shrout * $cfacshr"
+  return_type: "dataarray"
+  variables:
+    shrout:
+      type: "dataarray"
+      description: "CRSP shares outstanding ('shrout')"
+    cfacshr:
+      type: "dataarray"
+      description: "Cumulative share adjustment factor"
+
+chcsho_1m:
+  description: "One-period change in shares outstanding"
+  expression: "($shares_adj / shift($shares_adj, 1)) - 1"
+  return_type: "dataarray"
+  variables:
+    shares_adj:
+      type: "dataarray"
+      description: "Adjusted shares from shares_adj formula"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+chcsho_3m:
+  description: "Three-period change in shares outstanding"
+  expression: "($shares_adj / shift($shares_adj, 3)) - 1"
+  return_type: "dataarray"
+  variables:
+    shares_adj:
+      type: "dataarray"
+      description: "Adjusted shares from shares_adj formula"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+chcsho_6m:
+  description: "Six-period change in shares outstanding"
+  expression: "($shares_adj / shift($shares_adj, 6)) - 1"
+  return_type: "dataarray"
+  variables:
+    shares_adj:
+      type: "dataarray"
+      description: "Adjusted shares from shares_adj formula"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+chcsho_12m:
+  description: "Twelve-period change in shares outstanding"
+  expression: "($shares_adj / shift($shares_adj, 12)) - 1"
+  return_type: "dataarray"
+  variables:
+    shares_adj:
+      type: "dataarray"
+      description: "Adjusted shares from shares_adj formula"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+
+ret_1m:
+  description: "One-period total return"
+  expression: "$ret"
+  return_type: "dataarray"
+  variables:
+    ret:
+      type: "dataarray"
+      description: "Total return including distributions"
+
+ret_3m:
+  description: "Three-period compounded return"
+  expression: "(1 + $ret) * (1 + shift($ret, 1)) * (1 + shift($ret, 2)) - 1"
+  return_type: "dataarray"
+  variables:
+    ret:
+      type: "dataarray"
+      description: "Total return including distributions"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+ret_6m:
+  description: "Six-period compounded return"
+  expression: "(1 + $ret) * (1 + shift($ret, 1)) * (1 + shift($ret, 2)) * (1 + shift($ret, 3)) * (1 + shift($ret, 4)) * (1 + shift($ret, 5)) - 1"
+  return_type: "dataarray"
+  variables:
+    ret:
+      type: "dataarray"
+      description: "Total return including distributions"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+ret_12m:
+  description: "Twelve-period compounded return"
+  expression: "(1 + $ret) / shift(1 + $ret, 12) - 1"
+  return_type: "dataarray"
+  variables:
+    ret:
+      type: "dataarray"
+      description: "Total return including distributions"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+  notes: "Uses cumulative return approach: (1+ret_current) / (1+ret_12_periods_ago) - 1"

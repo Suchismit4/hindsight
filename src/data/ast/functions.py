@@ -42,6 +42,7 @@ from src.data.core.operations import median as core_median
 from src.data.core.operations import mode as core_mode
 from src.data.core.operations import gain as core_gain
 from src.data.core.operations import loss as core_loss
+from src.data.core.operations import rma as core_rma
 from src.data.core.operations import wma as core_wma
 from src.data.core.operations import triple_exponential_smoothing as core_triple_exponential_smoothing
 from src.data.core.operations import adaptive_ema as core_adaptive_ema
@@ -609,6 +610,64 @@ def ema(data, window):
         # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for ema: {type(data)}")
 
+@register_function(category="temporal")
+def rma(data, window):
+    """
+    Calculate the relative moving average along the time dimension.
+    
+    This function calculates the rolling RMA of a dataset or DataArray over a window
+    of size 'window' along the time dimension. It uses a simple moving average
+    weighting scheme.
+    
+    The function handles both Dataset and DataArray inputs:
+    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
+    - For DataArray inputs, it uses the mask from the parent Dataset or from context
+        
+    Args:
+        data: Input array or dataset
+        window: Size of the rolling window
+        
+    Returns:
+        Dataset or DataArray with rolling RMA values
+        
+    Examples:
+        >>> import xarray as xr
+        >>> # Example with xarray dataset
+        >>> ds = xr.Dataset(...)
+        >>> # Whole dataset calculation
+        >>> rma_values = rma(ds, 30)  # 30-day RMA for all variables
+        >>> # Single variable calculation
+        >>> close_rma = rma($close, 30)  # 30-day RMA for just close prices
+    """    
+    if isinstance(data, xr.Dataset):
+        # Dataset case: use built-in rolling method with dataset's mask
+        return data.dt.rolling(dim='time', window=window).reduce(core_rma)
+    elif isinstance(data, xr.DataArray):
+        # DataArray case: need to handle mask explicitly
+        mask = None
+        indices = None
+        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
+            parent_ds = data.attrs['_parent_dataset']
+            if 'mask' in parent_ds.coords:
+                mask = parent_ds.coords['mask'].values
+            if 'mask_indices' in parent_ds.coords:
+                indices = parent_ds.coords['mask_indices'].values
+                
+        if mask is not None and indices is not None:
+            # Call dt.rolling directly, passing mask and indices
+            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_rma)
+        else:
+            # If mask/indices cannot be found, raise an error
+            raise ValueError(
+                "Rolling operation on DataArray requires mask and mask_indices. "
+                "Ensure the DataArray originated from a Dataset with these coordinates, "
+                "or provide them explicitly if calling the function directly."
+            )
+    else:
+        # Handle other types (e.g., numpy arrays)
+        raise TypeError(f"Unsupported data type for rma: {type(data)}")
+
+
 @register_function(category="temporal") 
 def gain(data, window):
     """
@@ -756,8 +815,6 @@ def wma(data, window, weights=None):
     """
     # Convert weights to JAX array if provided
     if weights is not None:
-        import jax.numpy as jnp
-        weights = jnp.asarray(weights, dtype=jnp.float32)
         if len(weights) != window:
             raise ValueError(f"Weights array length ({len(weights)}) must equal window size ({window})")
     

@@ -232,6 +232,7 @@ class CacheManager:
         
         # Create a deep copy of parameters to avoid side-effects.
         parameters = deepcopy(parameters)
+        # quit()
         
         # Extract postprocessor configuration (if any) from the 'config' section.
         postprocessors_config = deepcopy(parameters.get("config", {}).get("postprocessors", []))
@@ -264,6 +265,7 @@ class CacheManager:
         
         # If Level 2 cache is not found, try to load the Level 1 (raw) cache.
         dataset_to_process = self._load_from_cache(relative_path, normalized_l1_params, cache_directory, L1Key)
+        
         if dataset_to_process is not None:
             print(f"{relative_path}: Processing loaded L1 cache.")
         else:

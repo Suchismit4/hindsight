@@ -37,6 +37,7 @@ from src.data.processors.registry import Registry, post_processor
 from src.data.processors.processors import (
     # Dataset transformation processors
     merge_2d_table,
+    merge_4d_table,
     replace,
     
     # Coordinate-related processors
@@ -76,6 +77,16 @@ PROCESSOR_SHORTCUTS = {
             "identifier": "identifier"
         }
     },
+    "merge_4d_table": {
+        "proc": "merge_4d_table",
+        "options_mapping": {
+            "source": "src",
+            "variables": "variables",
+            "identifier": "identifier",
+            "time_column": "time_column",
+            "rename": "rename"
+        }
+    },
     
     # Coordinate handling
     "set_permno_coord": {
@@ -106,6 +117,7 @@ __all__ = [
     
     # Processors
     'merge_2d_table',
+    'merge_4d_table',
     'replace',
     'set_permno',
     'set_permco',
@@ -284,7 +296,9 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
         processors_list = parse_processors_config(processors)
     else:
         processors_list = processors
-        
+    
+    print(f"DEBUG: Applying processors: {processors_list}")
+    # quit()
     for processor_config in processors_list:
         proc_name = processor_config.get("proc")
         options = processor_config.get("options", {})

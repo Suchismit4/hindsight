@@ -55,7 +55,8 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
             df,
             date_col='datadate',
             identifier_col='gvkey',
-            filters_config=config.get('filters', {})
+            filters=config.get('filters', {}),
+            **config
         )
         
         # Load CCM link table with basic filtering of invalid links

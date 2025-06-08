@@ -23,7 +23,9 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
     # Map user frequency strings to (filename, FrequencyType)
     CRSP_FREQUENCY_MAP = {
         'D': ('dsf.sas7bdat', FrequencyType.DAILY),
+        'DAILY': ('dsf.sas7bdat', FrequencyType.DAILY),
         'M': ('msf.sas7bdat', FrequencyType.MONTHLY),
+        'MONTHLY': ('msf.sas7bdat', FrequencyType.MONTHLY),
     }
 
     def load_data(self, **config) -> xr.Dataset:
@@ -61,11 +63,14 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
             df,
             date_col='date',
             identifier_col='permno',
-            filters_config=config.get('filters', {})
+            filters=config.get('filters', {}),
+            **config
         )
 
         # Convert 'permco' to int if present.
         if 'permco' in df.columns:
             df.loc[:, 'permco'] = df['permco'].astype(int)  # in-place
-            
+        
+        # print(df.columns)
+        
         return df

@@ -21,6 +21,8 @@ from src.data.processors.registry import Registry
 filter_registry = Registry[pd.DataFrame, pd.DataFrame]("filter_registry")
 
 # Mapping of Django-style suffixes to filter types and operators
+# Note: date filtering is now handled directly through start_date/end_date config parameters
+# rather than through the filter system to avoid redundancy
 DJANGO_FILTER_SUFFIX_MAP = {
     "eq": ("equality_filter", None),
     "ne": ("comparison_filter", "!="),
@@ -31,7 +33,6 @@ DJANGO_FILTER_SUFFIX_MAP = {
     "in": ("in_filter", None),
     "nin": ("not_in_filter", None),
     "range": ("range_filter", None),
-    "date_range": ("date_range_filter", None)
 }
 
 # ===============================================================================
@@ -295,7 +296,9 @@ def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, A
     - column__in: [values]           -> in_filter
     - column__nin: [values]          -> not_in_filter
     - column__range: [min, max]      -> range_filter
-    - column__date_range: [start, end] -> date_range_filter
+    
+    Note: Date filtering is now handled directly through start_date/end_date 
+    configuration parameters instead of through the filter system.
     
     Args:
         filters_dict: Dictionary of Django-style filters
@@ -322,6 +325,9 @@ def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, A
         
         # Simple equality check without double underscore (e.g., "ticker": "AAPL")
         if len(parts) == 1:
+            # Check if this looks like date filtering
+            if column.lower() == 'date':
+                print(f"WARNING: Date filtering through filters is deprecated. Use start_date/end_date config parameters instead of '{key}'.")
             filter_configs.append({
                 "type": "equality_filter",
                 "column": column,
@@ -331,6 +337,11 @@ def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, A
         
         # Extract suffix (e.g., "gte" from "price__gte")
         suffix = parts[1]
+        
+        # Check for date filtering attempts
+        if column.lower() == 'date' or suffix in ['date_range']:
+            print(f"WARNING: Date filtering through filters is deprecated. Use start_date/end_date config parameters instead of '{key}'.")
+            continue  # Skip this filter
         
         # Check suffix against mapping
         if suffix not in DJANGO_FILTER_SUFFIX_MAP:
@@ -368,15 +379,6 @@ def parse_django_style_filters(filters_dict: Dict[str, Any]) -> List[Dict[str, A
                 "column": column,
                 "min_value": value[0],
                 "max_value": value[1]
-            })
-        elif filter_type == "date_range_filter":
-            if not isinstance(value, (list, tuple)) or len(value) != 2:
-                raise ValueError(f"Date range filter for '{key}' must provide a list or tuple with two values: [start_date, end_date].")
-            filter_configs.append({
-                "type": filter_type,
-                "date_column": column,
-                "start_date": value[0],
-                "end_date": value[1]
             })
     
     return filter_configs
