@@ -202,7 +202,9 @@ class ConfigLoader:
             ("wrds", "crsp_names"): "wrds/equity/crsp",  # Same loader, different processing
             ("wrds", "crsp_distributions"): "wrds/equity/crsp",  # Same loader, different processing
             ("wrds", "compustat"): "wrds/equity/compustat",
-            ("openbb", "equity_prices"): "openbb/equity/price/historical"
+            ("openbb", "equity_prices"): "openbb/equity/price/historical",
+            ("crypto", "binance_spot"): "crypto/spot/binance",
+            ("crypto", "spot"): "crypto/spot/binance",  # Alternative naming
         }
         return mapping.get((provider, dataset), f"{provider}/{dataset}")
     
@@ -277,15 +279,16 @@ class ConfigLoader:
         
         # Handle transforms
         transforms_config = processors.get('transforms', [])
-        for transform in transforms_config:
-            if transform.get('type') == 'set_coordinates':
-                coord_type = transform.get('coord_type', 'permno')
-                if coord_type == 'permno':
-                    legacy_processors['set_permno_coord'] = True
-                elif coord_type == 'permco':
-                    legacy_processors['set_permco_coord'] = True
-            elif transform.get('type') == 'fix_market_equity':
-                legacy_processors['fix_market_equity'] = True
+        if transforms_config:  # Only process if not None or empty
+            for transform in transforms_config:
+                if transform.get('type') == 'set_coordinates':
+                    coord_type = transform.get('coord_type', 'permno')
+                    if coord_type == 'permno':
+                        legacy_processors['set_permno_coord'] = True
+                    elif coord_type == 'permco':
+                        legacy_processors['set_permco_coord'] = True
+                elif transform.get('type') == 'fix_market_equity':
+                    legacy_processors['fix_market_equity'] = True
         
         return legacy_processors
 

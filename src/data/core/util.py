@@ -93,11 +93,13 @@ class FrequencyType(Enum):
     for correct time dimension creation in datasets.
     
     Attributes:
+        HOURLY: Hourly frequency ('H')
         DAILY: Daily frequency ('D')
         WEEKLY: Weekly frequency ('W')
         MONTHLY: Monthly frequency ('M')
         YEARLY/ANNUAL: Annual frequency ('Y')
     """
+    HOURLY    = 'H'
     DAILY     = 'D'
     WEEKLY    = 'W'
     MONTHLY   = 'M'
@@ -343,7 +345,7 @@ class Loader:
         Creates an xarray Dataset from a table (Pandas DataFrame), with fixed-size time dimensions.
         
         This function transforms tabular data into a multi-dimensional xarray structure with
-        year, month, day, and asset dimensions. It handles frequency-specific time dimension
+        year, month, day, hour, and asset dimensions. It handles frequency-specific time dimension
         creation, coordinate assignments, and proper indexing for time series operations.
 
         Parameters:
@@ -351,12 +353,13 @@ class Loader:
             time_column (str): Name of the time column in the data.
             asset_column (str): Name of the asset column in the data.
             feature_columns (Optional[List[str]]): List of feature columns. If None, all columns 
-                except time_column, year, month, day, and asset_column will be treated as features.
-            frequency (FrequencyType): The frequency of the data (YEARLY, MONTHLY, or DAILY).
+                except time_column, year, month, day, hour, and asset_column will be treated as features.
+            frequency (FrequencyType): The frequency of the data (HOURLY, DAILY, MONTHLY, or YEARLY).
 
         Returns:
-            xr.Dataset: Dataset with dimensions (year, month, day, asset) and the given
+            xr.Dataset: Dataset with dimensions (year, month, day, hour, asset) and the given
                 features as variables, with time coordinate and business day masks.
+                Note: For non-hourly frequencies, the hour dimension will be constant (0).
                 
         Raises:
             ValueError: If frequency is not supported or required columns are missing.
@@ -373,36 +376,46 @@ class Loader:
         if data[time_column].isnull().any():
             raise ValueError(f"The '{time_column}' column contains invalid datetime values.")
         
-        # We add year, month, and day columns to the DataFrame depending on the frequency
-        # For YEARLY frequency, month and day are set to 1.
-        # For MONTHLY frequency, only day is set to 1.
-        # For DAILY frequency, we keep actual day values.
+        # We add year, month, day, and hour columns to the DataFrame depending on the frequency
+        # For YEARLY frequency, month, day, and hour are set to 1, 1, 0.
+        # For MONTHLY frequency, day and hour are set to 1, 0.
+        # For DAILY frequency, hour is set to 0.
+        # For HOURLY frequency, we keep actual hour values.
         if frequency == FrequencyType.YEARLY:
             data['year'] = data[time_column].dt.year
             data['month'] = 1
             data['day'] = 1
+            data['hour'] = 0
         elif frequency == FrequencyType.MONTHLY:
             data['year'] = data[time_column].dt.year
             data['month'] = data[time_column].dt.month
             data['day'] = 1
+            data['hour'] = 0
         elif frequency == FrequencyType.DAILY:
             data['year'] = data[time_column].dt.year
             data['month'] = data[time_column].dt.month
             data['day'] = data[time_column].dt.day
+            data['hour'] = 0
+        elif frequency == FrequencyType.HOURLY:
+            data['year'] = data[time_column].dt.year
+            data['month'] = data[time_column].dt.month
+            data['day'] = data[time_column].dt.day
+            data['hour'] = data[time_column].dt.hour
         else:
             raise ValueError(f"Unsupported frequency: {frequency}")
         
-        # Gather unique values for each dimension (year, month, day, asset)
+        # Gather unique values for each dimension (year, month, day, hour, asset)
         # The data is sorted so we can properly create coordinate arrays in ascending order
         years = np.sort(data['year'].unique())
         months = np.sort(data['month'].unique()) if 'month' in data.columns else np.array([1])
         days = np.sort(data['day'].unique()) if 'day' in data.columns else np.array([1])
+        hours = np.sort(data['hour'].unique()) if 'hour' in data.columns else np.array([0])
         assets = np.sort(data[asset_column].unique())
         
         # Determine feature columns if not explicitly provided
-        # We exclude the time, year, month, day, and asset columns from feature consideration.
+        # We exclude the time, year, month, day, hour, and asset columns from feature consideration.
         if feature_columns is None:
-            exclude_cols = [time_column, 'year', 'month', 'day', asset_column]
+            exclude_cols = [time_column, 'year', 'month', 'day', 'hour', asset_column]
             feature_columns = [col for col in data.columns if col not in exclude_cols]
         
         # Ensure that all specified feature columns are actually present in the DataFrame
@@ -411,21 +424,23 @@ class Loader:
             raise ValueError(f"Feature columns not found: {missing_features}")
         
         # Define arrays to map coordinate values to their indices.
-        # For each row in 'data', we locate the positions of year, month, day, and asset in their respective sorted arrays.
+        # For each row in 'data', we locate the positions of year, month, day, hour, and asset in their respective sorted arrays.
         y_idx = np.searchsorted(years, data['year'].to_numpy())
         m_idx = np.searchsorted(months, data['month'].to_numpy())
         d_idx = np.searchsorted(days, data['day'].to_numpy())
+        h_idx = np.searchsorted(hours, data['hour'].to_numpy())
         a_idx = np.searchsorted(assets, data[asset_column].to_numpy())
         
-        # Create a flat 1D index that represents the combination of (year, month, day, asset).
+        # Create a flat 1D index that represents the combination of (year, month, day, hour, asset).
         # We compute this by combining indices in a single integer using multiplication and addition, ensuring each dimension is accounted for.
         n_months = len(months)
         n_days = len(days)
+        n_hours = len(hours)
         n_assets = len(assets)
-        idx_1d = ((y_idx * n_months + m_idx) * n_days + d_idx) * n_assets + a_idx
+        idx_1d = (((y_idx * n_months + m_idx) * n_days + d_idx) * n_hours + h_idx) * n_assets + a_idx
         
-        # Define the shape of the final 4D data arrays we will store. This is based on the length of each dimension.
-        shape_data = (len(years), len(months), len(days), len(assets))
+        # Define the shape of the final 5D data arrays we will store. This is based on the length of each dimension.
+        shape_data = (len(years), len(months), len(days), len(hours), len(assets))
         
         # Separate numeric and object feature columns to build arrays appropriately.
         numeric_cols = [fc for fc in feature_columns if data[fc].dtype.kind in 'bifc']
@@ -458,47 +473,55 @@ class Loader:
             fa_flat = feature_arrays[fc].ravel()
             fa_flat[idx_1d] = feature_vals[fc]
         
-        # Here we create the actual time coordinate as a 3D array (years x months x days).
-        # We build a meshgrid for year, month, day, then convert each position to a valid datetime.
+        # Here we create the actual time coordinate as a 4D array (years x months x days x hours).
+        # We build a meshgrid for year, month, day, hour, then convert each position to a valid datetime.
         # This will serve as the actual "time" dimension in the final dataset.
-        yr_mesh, mo_mesh, dd_mesh = np.meshgrid(years, months, days, indexing='ij')
+        yr_mesh, mo_mesh, dd_mesh, hh_mesh = np.meshgrid(years, months, days, hours, indexing='ij')
         flat_years = yr_mesh.ravel()
         flat_months = mo_mesh.ravel()
         flat_days = dd_mesh.ravel()
+        flat_hours = hh_mesh.ravel()
         time_index_flat = pd.to_datetime(
             {
                 'year': flat_years,
                 'month': flat_months,
-                'day': flat_days
+                'day': flat_days,
+                'hour': flat_hours
             },
             errors='coerce'
         )
-        time_data = time_index_flat.values.reshape((len(years), len(months), len(days)))
+        time_data = time_index_flat.values.reshape((len(years), len(months), len(days), len(hours)))
         
-        # Build an xarray DataArray for the time coordinate, setting up the coordinate dims as year, month, day.
+        # Build an xarray DataArray for the time coordinate, setting up the coordinate dims as year, month, day, hour.
         time_coord = xr.DataArray(
             data=time_data,
             coords={
                 'year': years,
                 'month': months,
-                'day': days
+                'day': days,
+                'hour': hours
             },
-            dims=['year', 'month', 'day']
+            dims=['year', 'month', 'day', 'hour']
         )
         
         # Create a custom time index (TimeSeriesIndex) object or a placeholder for more advanced time handling.
         ts_index = TimeSeriesIndex(time_coord)
         
         # Temporarily, we build an xarray Dataset, attaching all the coordinates we need.
+        # We need a flattened time coordinate for mask/indices that corresponds to the stacked time dimensions
+        time_flat_coords = np.arange(len(time_index_flat.values))
+        
         ds = xr.Dataset(
             coords={
                 'year': years,
                 'month': months,
                 'day': days,
+                'hour': hours,
                 'asset': assets,
-                'time': (['year', 'month', 'day'], time_data),
-                'mask': ('time', np.zeros(len(time_index_flat.values))),
-                'mask_indices': ('time', np.zeros(len(time_index_flat.values)))
+                'time': (['year', 'month', 'day', 'hour'], time_data),
+                'time_flat': time_flat_coords,  # Flattened time coordinate for mask/indices
+                'mask': (['time_flat', 'asset'], np.zeros((len(time_index_flat.values), len(assets)), dtype=bool)),
+                'mask_indices': ('time_flat', np.zeros(len(time_index_flat.values), dtype=int))
             }
         )
 
@@ -508,90 +531,60 @@ class Loader:
             if np.issubdtype(arr.dtype, np.number):
                 ds[fc] = xr.DataArray(
                     data=jnp.array(arr),
-                    dims=['year', 'month', 'day', 'asset']
+                    dims=['year', 'month', 'day', 'hour', 'asset']
                 )
             else:
                 ds[fc] = xr.DataArray(
                     data=arr,
-                    dims=['year', 'month', 'day', 'asset']
+                    dims=['year', 'month', 'day', 'hour', 'asset']
                 )
 
         # Add the TimeSeriesIndexing
         ds.coords['time'].attrs['indexes'] = {'time': ts_index}
         
-        # We are going to select a known asset and variable to create the mask and indices
-        # This is a temporary fix to avoid the problem of true NaNs and filling with 0s
-        # discuss with prof.
-        asset = 14593
-        var = 'prc'
+        # Create asset-specific mask and indices for all assets
+        # This creates a mask of shape (T, N) where T is time periods and N is number of assets
         
         stacked_obj = None
         
+        # Determine time dimensions to stack based on what's present
+        time_dims = ["year", "month", "day"]
+        if "hour" in ds.dims:
+            time_dims.append("hour")
+        
+        # Find the first numeric variable and stack all assets
         for var_name, da in ds.data_vars.items():
             if np.issubdtype(da.dtype, np.number):
-                stacked_obj = da.sel(asset=asset).stack(time_index=("year", "month", "day"))
+                # Stack time dimensions but keep all assets
+                stacked_obj = da.stack(time_index=tuple(time_dims))
+                # Transpose to ensure dimensions are (time_index, asset)
+                stacked_obj = stacked_obj.transpose('time_index', 'asset')
                 break
         
         if stacked_obj is None:
             raise ValueError("No numeric variable found in the dataset. Failed to create mask and indices.")
         
-        # Create a stacked DataArray for mask and indices
-        # first_var = 'ret'
-        # stacked_obj = ds[first_var].stack(time_index=("year", "month", "day"))
+        # stacked_obj now has shape (time_index, asset)
+        # Extract the data array which should have shape (T, N)
+        data_arr = stacked_obj.values  # Shape: (T, N) where T=time periods, N=num_assets
         
-        # Extract date tuples for mask creation
-        time_tuples = stacked_obj.coords["time_index"].values  # Shape: (T, 3)
-        _dates = np.array([[*date] for date in time_tuples])  # Convert to list of tuples
+        # Create asset-specific mask: True where data is not NaN for each asset
+        mask = ~(np.isnan(data_arr))  # Shape: (T, N)
         
-        # TODO: A problem is that there are true NaNs and filling with 0s doesnt work for a
-        # a certain number of computations and produces errors. A temp fix to mask all NaNs
-        # discuss with prof.
-        # Create business day mask and indices
-        
-        # dates = pd.to_datetime(
-        #     {
-        #         'year': _dates[:, 0],
-        #         'month': _dates[:, 1],
-        #         'day': _dates[:, 2]
-        #     }, 
-        #     errors='coerce'
-        # )
-        
-        # # Create mask and indices
-        # is_valid_date = ~dates.isna()
-        # is_business_day = dates.dt.dayofweek < 5  # Monday=0 to Friday=4
-        # mask = is_valid_date & is_business_day
-
-        # mask = mask.to_numpy(dtype=bool)
-                
-        # # For positions where mask is True, store the original index.
-        # valid_positions = np.flatnonzero(mask)  # positions of valid business days
-        # valid_positions_sorted = np.sort(valid_positions)
-        
-        # indices = -1 * np.ones(len(_dates), dtype=int)
-        # num_valid = len(valid_positions_sorted)
-        # indices[:num_valid] = valid_positions_sorted
-
-        # # Reshape mask and indices to match the time dimensions (year, month, day)
-        # time_shape = (len(years), len(months), len(days))
-        # # mask_3d = mask.reshape(time_shape)
-        # # indices_3d = indices.reshape(time_shape)
-
-        data_arr = stacked_obj.values # (T, assets)
-        # print(data_arr.shape)
-        mask = ~(np.isnan(data_arr)) # (T,)
-        # print(mask.shape)
-        # raise Exception("Stop here")
-
-        valid_pos = np.flatnonzero(mask)
+        # For indices, we need to handle this per asset, but the current system expects
+        # a single indices array. For now, we'll create indices based on any asset having valid data
+        any_valid = np.any(mask, axis=1)  # Shape: (T,) - True if any asset has valid data at time t
+        valid_pos = np.flatnonzero(any_valid)
         T = mask.shape[0]
         indices = -1 * np.ones(T, dtype=int)
         indices[:valid_pos.shape[0]] = valid_pos
 
-        # Only assign mask and indices at the Dataset level with the flattened 'time' coordinate
+        # Assign mask and indices at the Dataset level
+        # mask has shape (T, N) so it needs both time_flat and asset dimensions
+        # indices remains (T,) as it represents time-based indexing on time_flat
         ds = ds.assign_coords({
-             'mask': ('time', mask),                # Shape: (T,)
-             'mask_indices': ('time', indices)      # Shape: (T,)
+             'mask': (['time_flat', 'asset'], mask),     # Shape: (T, N)
+             'mask_indices': ('time_flat', indices)      # Shape: (T,)
         })
                 
         # We have successfully built the Dataset. At this point, the structure
@@ -804,10 +797,14 @@ class Rolling(eqx.Module):
         if not np.issubdtype(self.obj.dtype, np.number):
             return self.obj
 
-        # For time-based rolling, we expect a multi-dimensional time (year, month, day).
-        if self.dim == "time" and set(["year", "month", "day"]).issubset(self.obj.dims):
+        # For time-based rolling, we expect a multi-dimensional time (year, month, day, optionally hour).
+        expected_time_dims = ["year", "month", "day"]
+        if "hour" in self.obj.dims:
+            expected_time_dims.append("hour")
+            
+        if self.dim == "time" and set(expected_time_dims).issubset(self.obj.dims):
             # Stack the time dimensions.
-            stacked_obj = self.obj.stack(time_index=("year", "month", "day"))
+            stacked_obj = self.obj.stack(time_index=tuple(expected_time_dims))
             stacked_obj = stacked_obj.transpose("time_index", ...)
 
             # Convert to a JAX array and add a trailing singleton dimension.
@@ -841,5 +838,26 @@ class Rolling(eqx.Module):
         else:
             print(f'warning:{self.obj.dims} cross-sectional rolling not supported yet.')
             return self.obj
+    
+    def mean(self, **kwargs) -> Union[xr.DataArray, xr.Dataset]:
+        """Apply rolling mean."""
+        from src.data.core.operations.standard import mean
+        return self.reduce(mean, **kwargs)
+    
+    def sum(self, **kwargs) -> Union[xr.DataArray, xr.Dataset]:
+        """Apply rolling sum.""" 
+        from src.data.core.operations.standard import sum_func
+        return self.reduce(sum_func, **kwargs)
+    
+    def std(self, **kwargs) -> Union[xr.DataArray, xr.Dataset]:
+        """Apply rolling standard deviation."""
+        # TODO: For now, just use mean as placeholder - std needs to be implemented
+        from src.data.core.operations.standard import mean
+        return self.reduce(mean, **kwargs)
+    
+    def median(self, **kwargs) -> Union[xr.DataArray, xr.Dataset]:
+        """Apply rolling median."""
+        from src.data.core.operations.standard import median
+        return self.reduce(median, **kwargs)
         
         

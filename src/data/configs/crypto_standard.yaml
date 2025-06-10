@@ -1,0 +1,26 @@
+data:
+  # Standard cryptocurrency data configuration
+  name: "crypto-standard"
+  start_date: "2024-01-01"
+  end_date: "2024-01-03"
+  cache_path: "~/data/cache/"
+  
+  sources:
+    # Primary cryptocurrency price data
+    crypto_prices:
+      provider: "crypto"
+      dataset: "binance_spot"
+      frequency: "H"  # Hourly data
+      
+      schema:
+        time_var: "date"
+        identifier_var: "identifier"  # Symbol will become asset dimension
+        
+      processors:
+        # No external merges needed for basic crypto data
+        # The symbol automatically becomes the asset dimension
+        
+        # Data transformations (minimal for crypto)
+        transforms: []
+          # The crypto loader already handles symbol -> asset mapping
+          # No additional transforms needed for basic use case 

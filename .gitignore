@@ -8,3 +8,12 @@ venv/
 *.csv
 
 **/pycache
+
+# Ignore pyc files
+*.pyc
+
+# Ignore zips
+*.zip
+
+# Ignore .DS_Store
+.DS_Store

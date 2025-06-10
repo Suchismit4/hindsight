@@ -986,7 +986,7 @@ def shift(data, periods=1):
         >>> shifted_close = shift($close, -1)  # Shift close prices backward by 1 time period
     """
     if isinstance(data, xr.Dataset):
-        # Check if this dataset has the 3D time structure (year, month, day)
+        # Check if this dataset has the multi-dimensional time structure (year, month, day, optionally hour)
         if 'year' in data.coords and 'month' in data.coords and 'day' in data.coords:
             # Use business day aware shift
             return data.dt.shift(periods=periods)
@@ -995,9 +995,9 @@ def shift(data, periods=1):
             return data.shift(time=periods)
             
     elif isinstance(data, xr.DataArray):
-        # Check if this DataArray has the 3D time structure
+        # Check if this DataArray has the multi-dimensional time structure
         if 'year' in data.coords and 'month' in data.coords and 'day' in data.coords:
-            # DataArray case with 3D time: need to handle mask explicitly
+            # DataArray case with multi-dimensional time: need to handle mask explicitly
             mask_indices = None
             if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
                 parent_ds = data.attrs['_parent_dataset']
@@ -1011,7 +1011,7 @@ def shift(data, periods=1):
             else:
                 # If mask_indices cannot be found, raise an error
                 raise ValueError(
-                    "Shift operation on DataArray with 3D time structure requires mask_indices. "
+                    "Shift operation on DataArray with multi-dimensional time structure requires mask_indices. "
                     "Ensure the DataArray originated from a Dataset with these coordinates, "
                     "or provide them explicitly if calling the function directly."
                 )
@@ -1161,9 +1161,14 @@ def adaptive_ema(data, smoothing_factors):
     
     # Convert smoothing_factors to JAX array if it's an xarray object
     if isinstance(smoothing_factors, (xr.Dataset, xr.DataArray)):
-        # Stack the time dimensions if it's a 3D structure to match how the rolling operations work
+        # Stack the time dimensions if it's a multi-dimensional structure to match how the rolling operations work
         if 'year' in smoothing_factors.coords and 'month' in smoothing_factors.coords and 'day' in smoothing_factors.coords:
-            smoothing_stacked = smoothing_factors.stack(time_index=("year", "month", "day"))
+            # Determine time dimensions to stack based on what's present
+            time_dims = ["year", "month", "day"]
+            if "hour" in smoothing_factors.coords:
+                time_dims.append("hour")
+            
+            smoothing_stacked = smoothing_factors.stack(time_index=tuple(time_dims))
             smoothing_stacked = smoothing_stacked.transpose("time_index", ...)
             smoothing_vals = smoothing_stacked.values
         else:

@@ -22,7 +22,7 @@ import xarray as xr
 import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Dict, List, Optional, Tuple, Any
-import functools
+import xarray_jax
 
 from src.data.core.operations import TimeSeriesOps
 from .util import Rolling
@@ -71,7 +71,7 @@ class DateTimeAccessorBase:
         """
         Converts multi-dimensional data into time-indexed format.
 
-        Transforms data with separate year/month/day dimensions into a single time dimension,
+        Transforms data with separate year/month/day/hour dimensions into a single time dimension,
         ensuring no inconsistent multi-index coordinates remain.
 
         Returns:
@@ -79,14 +79,24 @@ class DateTimeAccessorBase:
         """
         ds = self._obj
 
-        # Rename original 3D 'time' to avoid collision
-        ds = ds.rename({'time': 'time_3d'})
+        # Determine time dimensions to stack based on what's present
+        time_dims = ["year", "month", "day"]
+        if "hour" in ds.dims:
+            time_dims.append("hour")
+
+        # Rename original time coordinate to avoid collision
+        if len(time_dims) == 3:
+            ds = ds.rename({'time': 'time_3d'})
+            old_time_name = 'time_3d'
+        else:
+            ds = ds.rename({'time': 'time_4d'})
+            old_time_name = 'time_4d'
         
-        # Stack year/month/day into a single dimension
-        ds_flat = ds.stack(stacked_time=("year", "month", "day"))
+        # Stack time dimensions into a single dimension
+        ds_flat = ds.stack(stacked_time=tuple(time_dims))
         
         # Prepare to clean up old coordinates before assigning new time
-        vars_to_drop = ['time', 'year', 'month', 'day', 'time_3d', 'stacked_time']
+        vars_to_drop = ['time'] + time_dims + [old_time_name, 'stacked_time']
         
         # Remove old coordinates FIRST to prevent inconsistency
         ds_flat = ds_flat.drop_vars(vars_to_drop, errors="ignore")
@@ -94,7 +104,7 @@ class DateTimeAccessorBase:
         # Rename dimension and assign new time coordinate
         ds_flat = ds_flat.rename_dims({"stacked_time": "time"})
         ds_flat = ds_flat.assign_coords(
-            time=("time", ds["time_3d"].values.ravel())
+            time=("time", ds[old_time_name].values.ravel())
         )
         
         return ds_flat
@@ -131,6 +141,14 @@ class DateTimeAccessorBase:
                 mask = jnp.array(obj.coords['mask'].values)
             if 'mask_indices' in obj.coords and mask_indices is None:
                 mask_indices = jnp.array(obj.coords['mask_indices'].values)
+            
+            # For DataArrays, also try to get from parent Dataset if available
+            if isinstance(obj, xr.DataArray) and hasattr(self, '_parent_obj') and self._parent_obj is not None:
+                parent_ds = self._parent_obj
+                if 'mask' in parent_ds.coords and mask is None:
+                    mask = jnp.array(parent_ds.coords['mask'].values)
+                if 'mask_indices' in parent_ds.coords and mask_indices is None:
+                    mask_indices = jnp.array(parent_ds.coords['mask_indices'].values)
             
             # If still not available, raise an error
             if mask is None or mask_indices is None:
@@ -179,15 +197,23 @@ class DateTimeAccessorBase:
                     if 'year' not in da.coords:
                         shifted_vars[var_name] = da
                     else:
+                        # Determine time dimensions to stack based on what's present
+                        time_dims = ["year", "month", "day"]
+                        if "hour" in da.dims:
+                            time_dims.append("hour")
+                        
                         # Stack time dimensions for efficient processing
-                        stacked_da = da.stack(time_index=("year", "month", "day"))
+                        stacked_da = da.stack(time_index=tuple(time_dims))
                         stacked_da = stacked_da.transpose("time_index", ...)
                         
                         # Convert to JAX arrays for efficient computation
                         indices_array = mask_indices
                         # Replace -1 with 0 for valid indexing, but maintain mask for filtering
                         indices_array = jnp.where(indices_array == -1, 0, indices_array).astype(jnp.int32)
-                        data = jnp.asarray(stacked_da.values)
+                        
+                        # Get JAX-compatible data without converting to numpy via .values
+                        # Access the underlying data array directly to avoid TracerArrayConversionError
+                        data = stacked_da.data
                         
                         # Apply the shift operation
                         shifted_data = TimeSeriesOps.shift(data, indices_array, periods)
@@ -216,14 +242,22 @@ class DateTimeAccessorBase:
         if not np.issubdtype(obj.dtype, np.number):
             return obj
         
-        stacked_obj = obj.stack(time_index=("year", "month", "day"))
+        # Determine time dimensions to stack based on what's present
+        time_dims = ["year", "month", "day"]
+        if "hour" in obj.dims:
+            time_dims.append("hour")
+        
+        stacked_obj = obj.stack(time_index=tuple(time_dims))
         stacked_obj = stacked_obj.transpose("time_index", ...)
         
         # Convert to JAX arrays for efficient computation
         indices_array = mask_indices
         # Replace -1 with 0 for valid indexing, but maintain mask for filtering
         indices_array = jnp.where(indices_array == -1, 0, indices_array).astype(jnp.int32)
-        data = jnp.asarray(stacked_obj.values)
+        
+        # Get JAX-compatible data without converting to numpy via .values
+        # Access the underlying data array directly to avoid TracerArrayConversionError
+        data = stacked_obj.data
         
         # Apply the shift operation
         shifted_data = TimeSeriesOps.shift(data, indices_array, periods)
@@ -256,8 +290,8 @@ class DatasetDateTimeAccessor(DateTimeAccessorBase):
         """
         Retrieve a DataArray from the Dataset with a reference back to its parent.
         
-        This method sets a _dataset attribute on the returned DataArray pointing
-        back to the parent Dataset, enabling mask/indices access for rolling operations.
+        This method stores a reference to the parent Dataset in the DataArray's attrs,
+        enabling mask/indices access for rolling operations.
         
         Parameters:
             var_name (str): The name of the variable to extract.
@@ -271,11 +305,11 @@ class DatasetDateTimeAccessor(DateTimeAccessorBase):
         if var_name not in self._obj.data_vars:
             raise KeyError(f"Variable '{var_name}' not found in Dataset")
             
-        # Get the DataArray
-        data_array = self._obj[var_name]
+        # Get the DataArray and copy it to avoid modifying the original
+        data_array = self._obj[var_name].copy()
         
-        # Set reference to parent Dataset
-        data_array._dataset = self._obj
+        # Store reference to parent Dataset in attrs
+        data_array.attrs['_parent_dataset'] = self._obj
         
         return data_array
 
@@ -305,16 +339,17 @@ class DataArrayDateTimeAccessor(DateTimeAccessorBase):
         super().__init__(xarray_obj)
         
         # Try to identify the parent Dataset
-        # First check if DataArray has a custom _dataset attribute from direct assignment
-        self._parent_obj = getattr(xarray_obj, '_dataset', None)
+        # First check if DataArray has a parent dataset reference in attrs
+        self._parent_obj = xarray_obj.attrs.get('_parent_dataset', None)
         
-        # If not, see if this DataArray is a variable within a Dataset by checking the name
+        # If not found in attrs, try to find it through coordinates (legacy approach)
         if self._parent_obj is None and hasattr(xarray_obj, 'name') and xarray_obj.name is not None:
             # Find the DataArray's parent Dataset
             # This is a heuristic approach and might not always work
             # Ideally DataArrays would track their parent Dataset
             for var in xarray_obj.coords.values():
-                if hasattr(var, '_dataset') and isinstance(var._dataset, xr.Dataset):
-                    if xarray_obj.name in var._dataset.data_vars:
-                        self._parent_obj = var._dataset
+                if hasattr(var, 'attrs') and '_parent_dataset' in var.attrs:
+                    parent_ds = var.attrs['_parent_dataset']
+                    if isinstance(parent_ds, xr.Dataset) and xarray_obj.name in parent_ds.data_vars:
+                        self._parent_obj = parent_ds
                         break

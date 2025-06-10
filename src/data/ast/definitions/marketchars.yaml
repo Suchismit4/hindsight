@@ -3,6 +3,9 @@
 # This file defines common market characteristics formulas using the AST grammar.
 # Each formula is defined with its variables, functions, and validation rules.
 
+# ============================
+# Basic Market Data Variables
+# ============================
 
 market_equity:
   description: "Market equity"
@@ -13,6 +16,9 @@ market_equity:
       type: "dataarray"
       description: "CRSP market equity, stored in ds['me']"
 
+# ============================
+# Price & Return Helpers
+# ============================
 
 prc_adj:
   description: "Adjusted price at period-end"
@@ -45,18 +51,21 @@ price_ret:
           type: "number"
           description: "Number of periods to shift"
 
+# ============================
+# Dividend Calculations
+# ============================
 
 dividend:
-  description: "Inferred total dollar dividend per share from total return"
-  expression: "($ret - $price_ret) * shift($prc_adj, 1)"
+  description: "Inferred total dollar dividend per share from ret and retx"
+  expression: "($ret - $retx) * $prc_adj"
   return_type: "dataarray"
   variables:
     ret:
       type: "dataarray"
       description: "Total return including distributions"
-    price_ret:
+    retx:
       type: "dataarray"
-      description: "Price-only return from price_ret formula"
+      description: "Return excluding distributions (CRSP 'retx')"
     prc_adj:
       type: "dataarray"
       description: "Adjusted price data"
@@ -71,18 +80,33 @@ dividend:
           type: "number"
           description: "Number of periods to shift"
 
+shares_adj:
+  description: "Adjusted shares outstanding = shrout * cfacshr"
+  expression: "$shrout * $cfacshr"
+  return_type: "dataarray"
+  variables:
+    shrout:
+      type: "dataarray"
+      description: "CRSP shares outstanding ('shrout')"
+    cfacshr:
+      type: "dataarray"
+      description: "Cumulative share adjustment factor"
+
 dividend_times_shares:
-  description: "Total dollar dividends distributed (dividend per share * shares outstanding)"
-  expression: "$dividend * $shrout"
+  description: "Total dollar dividends distributed (dividend per share × adjusted shares)"
+  expression: "$dividend * $shares_adj"
   return_type: "dataarray"
   variables:
     dividend:
       type: "dataarray"
       description: "Dividend per share from dividend formula"
-    shrout:
+    shares_adj:
       type: "dataarray"
-      description: "CRSP shares outstanding ('shrout')"
+      description: "Adjusted shares from shares_adj formula"
 
+# ============================
+# Dividend Yield Ratios
+# ============================
 
 div1m_me:
   description: "One-period dividend yield (total dividend / ME)"
@@ -172,18 +196,9 @@ div12m_me:
           type: "number"
           description: "Number of periods"
 
-
-shares_adj:
-  description: "Adjusted shares outstanding = shrout * cfacshr"
-  expression: "$shrout * $cfacshr"
-  return_type: "dataarray"
-  variables:
-    shrout:
-      type: "dataarray"
-      description: "CRSP shares outstanding ('shrout')"
-    cfacshr:
-      type: "dataarray"
-      description: "Cumulative share adjustment factor"
+# ============================
+# Shares Outstanding Changes
+# ============================
 
 chcsho_1m:
   description: "One-period change in shares outstanding"
@@ -261,6 +276,9 @@ chcsho_12m:
           type: "number"
           description: "Number of periods to shift"
 
+# ============================
+# Additional Return Metrics
+# ============================
 
 ret_1m:
   description: "One-period total return"
@@ -311,7 +329,20 @@ ret_6m:
 
 ret_12m:
   description: "Twelve-period compounded return"
-  expression: "(1 + $ret) / shift(1 + $ret, 12) - 1"
+  expression: >-
+    (1 + $ret)
+    * (1 + shift($ret, 1))
+    * (1 + shift($ret, 2))
+    * (1 + shift($ret, 3))
+    * (1 + shift($ret, 4))
+    * (1 + shift($ret, 5))
+    * (1 + shift($ret, 6))
+    * (1 + shift($ret, 7))
+    * (1 + shift($ret, 8))
+    * (1 + shift($ret, 9))
+    * (1 + shift($ret, 10))
+    * (1 + shift($ret, 11))
+    - 1
   return_type: "dataarray"
   variables:
     ret:
@@ -327,4 +358,3 @@ ret_12m:
         - name: "periods"
           type: "number"
           description: "Number of periods to shift"
-  notes: "Uses cumulative return approach: (1+ret_current) / (1+ret_12_periods_ago) - 1"

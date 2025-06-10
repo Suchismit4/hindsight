@@ -52,9 +52,11 @@ def load_builtin_config(config_name: str) -> DataConfig:
 
 # Standard configurations
 EQUITY_STANDARD = "equity_standard"
+CRYPTO_STANDARD = "crypto_standard"
 
 __all__ = [
     'get_available_configs',
     'load_builtin_config', 
-    'EQUITY_STANDARD'
+    'EQUITY_STANDARD',
+    'CRYPTO_STANDARD'
 ] 

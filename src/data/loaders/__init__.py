@@ -7,6 +7,7 @@ different sources and normalize it to the Hindsight data model.
 Available data providers:
 1. WRDS (Wharton Research Data Services) - Access to CRSP, Compustat, and other databases
 2. OpenBB - Open-source financial data APIs
+3. Crypto - Local cryptocurrency data from CSV files
 
 Each loader handles source-specific data retrieval, preprocessing, and conversion
 to xarray Datasets with standardized dimensions and coordinates.
@@ -16,6 +17,9 @@ to xarray Datasets with standardized dimensions and coordinates.
 from .wrds.generic import GenericWRDSDataLoader
 from .wrds.crsp import CRSPDataFetcher
 from .wrds.compustat import CompustatDataFetcher
+
+# Import crypto loaders
+from .crypto.local import LocalCryptoDataFetcher
 
 # Try to import OpenBB loaders if they exist
 try:
@@ -31,6 +35,9 @@ __all__ = [
     'GenericWRDSDataLoader',
     'CRSPDataFetcher',
     'CompustatDataFetcher',
+    
+    # Crypto data loaders
+    'LocalCryptoDataFetcher',
     
     # OpenBB data loaders
     'OpenBBDataLoader',
