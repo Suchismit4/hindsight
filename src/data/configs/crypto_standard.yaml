@@ -1,7 +1,7 @@
 data:
   # Standard cryptocurrency data configuration
   name: "crypto-standard"
-  start_date: "2024-01-01"
+  start_date: "2019-01-01"
   end_date: "2024-01-03"
   cache_path: "~/data/cache/"
   

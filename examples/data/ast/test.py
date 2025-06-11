@@ -21,10 +21,10 @@ manager = FormulaManager()
 dm = DataManager()
 configs = dm.get_builtin_configs()
 print("Available configs:", configs)
-ds = dm.load_builtin("equity_standard", "2020-01-01", "2024-01-01")['equity_prices']
+ds = dm.load_builtin("crypto_standard", "2019-01-01", "2024-01-01")['crypto_prices']
 
 # create the closing prices
-ds["close"] = ds["prc"] / ds[" v"]
+# ds["close"] = ds["prc"] / ds["cfacpr"]
 
 # Prepare data for JIT, since some vars are not JIT compatible. For example, strings.
 ds_jit, recover = prepare_for_jit(ds)

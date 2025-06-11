@@ -1,0 +1,4 @@
+"""
+Backtester Module for Hindsight.
+"""
+
