@@ -50,20 +50,25 @@ def create_jit_evaluator():
         }
         
         # Multi-configuration evaluation with lag examples
+        # Using smaller windows to fit available data
         formula_configs = {
             "wma": [
-                {"window": 10},
-                {"window": 20}, 
-                {"window": 50} 
+                {"window": 5},
+                {"window": 10}, 
+                {"window": 15} 
             ],
             "rsi": [
-                {"window": 14},     
-                {"window": 21}  
+                {"window": 7},     
+                {"window": 14}  
             ],
-            "dema": {"window": 21},  
+            "dema": {"window": 10},  
             "alma": [
-                {"window": 10, "offset": 0.85, "sigma": 6},
-                {"window": 20, "offset": 0.9, "sigma": 8,}  
+                {"window": 5, "offset": 0.85, "sigma": 6},
+                {"window": 10, "offset": 0.9, "sigma": 8,}  
+            ],
+            "hma": [
+                {"window": 100},
+                {"window": 200}, 
             ]
         }
         

@@ -122,6 +122,10 @@ class TimeSeriesOps(eqx.Module):
             # If the overlap_factor (k) is not provided, default it to the ratio of max windows to window size
             if overlap_factor is None:
                 overlap_factor = max_windows / window_size
+                # Cap the overlap factor to maintain reasonable block sizes for parallelism
+                # This prevents huge blocks when we have lots of data relative to window size
+                max_reasonable_overlap = 20  # Allows blocks up to 20x window size
+                overlap_factor = min(overlap_factor, max_reasonable_overlap)
 
             # Compute the effective block size (kw) based on the overlap factor and window size
             # This tells us how many time steps each block will span, including overlap

@@ -177,7 +177,7 @@ class FormulaManager:
             # Find which of these functions are actually other formulas (functional dependence)
             formula_dependencies = set()
             for func_name in functions_used:
-                if func_name in self.formulas:
+                if func_name in self.formulas and func_name != formula_name:
                     formula_dependencies.add(func_name)
             
             # Also check for time series dependencies (dataarray variables that reference other formulas)
