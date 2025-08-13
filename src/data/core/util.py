@@ -481,6 +481,7 @@ class Loader:
         flat_months = mo_mesh.ravel()
         flat_days = dd_mesh.ravel()
         flat_hours = hh_mesh.ravel()
+        
         time_index_flat = pd.to_datetime(
             {
                 'year': flat_years,
@@ -571,22 +572,29 @@ class Loader:
         # Create asset-specific mask: True where data is not NaN for each asset
         mask = ~(np.isnan(data_arr))  # Shape: (T, N)
         
-        # For indices, we need to handle this per asset, but the current system expects
-        # a single indices array. For now, we'll create indices based on any asset having valid data
-        any_valid = np.any(mask, axis=1)  # Shape: (T,) - True if any asset has valid data at time t
-        valid_pos = np.flatnonzero(any_valid)
-        T = mask.shape[0]
-        indices = -1 * np.ones(T, dtype=int)
-        indices[:valid_pos.shape[0]] = valid_pos
+        # For indices, we need to handle this per asset
+        # For each asset, the positions of its valid rows:
+        pos = np.arange(mask.shape[0])[:, None]     # (T, 1)
+        valid_pos_per_asset = np.where(mask, pos, -1)  # (T, N), invalid -> -1
+        
+        # Now turn those into a stable “compressed timeline” per asset:
+        # Sort rows so valid positions come first per column; ties keep order
+        sort_keys = np.where(mask, pos, pos.max() + 1)   # invalid go to bottom
+        order = np.argsort(sort_keys, axis=0)            # (T, N)
+        
+        # Gather per-asset valid positions in top rows, padded with -1 below
+        sorted_pos = np.take_along_axis(valid_pos_per_asset, order, axis=0)  # (T, N)
 
         # Assign mask and indices at the Dataset level
-        # mask has shape (T, N) so it needs both time_flat and asset dimensions
-        # indices remains (T,) as it represents time-based indexing on time_flat
+        # Keep as coords
         ds = ds.assign_coords({
-             'mask': (['time_flat', 'asset'], mask),     # Shape: (T, N)
-             'mask_indices': ('time_flat', indices)      # Shape: (T,)
+            'mask': (['time_flat','asset'], mask),
+            'mask_indices': (['time_flat','asset'], sorted_pos.astype(np.int64))
         })
-                
+        
+        # Now mask_indices[t, a] means: "the original time index of the t-th valid observation for asset a"
+        # or -1 if none.
+                        
         # We have successfully built the Dataset. At this point, the structure
         # is fully set up with time, asset, and feature dimensions and coordinates.
         return ds
@@ -646,10 +654,6 @@ class Loader:
         )
 
         return simulated_ds
-
-
-# Type alias for clarity (optional)
-DateLikeNp = Union[np.datetime64, np.ndarray] # Expecting np.datetime64[D]
 
 class Rolling(eqx.Module):
     """
@@ -718,11 +722,7 @@ class Rolling(eqx.Module):
         
         # Store as JAX arrays with type conversion
         self.mask = jnp.asarray(mask, dtype=jnp.bool_)
-        self.indices = jnp.where(
-            jnp.asarray(indices) == -1, 
-            0, 
-            jnp.asarray(indices)
-        ).astype(jnp.int32)
+        self.indices = jnp.asarray(indices, dtype=jnp.int32)
         
     def reduce(self, 
                func: Callable[[int, Any, jnp.ndarray, int], Tuple[jnp.ndarray, Any]],
@@ -803,38 +803,66 @@ class Rolling(eqx.Module):
             expected_time_dims.append("hour")
             
         if self.dim == "time" and set(expected_time_dims).issubset(self.obj.dims):
-            # Stack the time dimensions.
+            # Stack the time dimensions. (T_full, assets)
             stacked_obj = self.obj.stack(time_index=tuple(expected_time_dims))
-            stacked_obj = stacked_obj.transpose("time_index", ...)
+            stacked_obj = stacked_obj.transpose("time_index", "asset", ...)
 
             # Convert to a JAX array and add a trailing singleton dimension.
-            data = jnp.asarray(stacked_obj.data)[..., None]  # Expected shape: (T, assets, 1)
+            data = jnp.asarray(stacked_obj.data)[..., None]  # Expected shape: (T_full, assets, 1)
+            
+            # per-asset compression using (T_full, assets) indices
+            idx        = self.indices                      # (T_full, N), keep -1s
+            idx_valid  = (idx >= 0)                        # (T_full, N)
+            idx_safe   = jnp.where(idx_valid, idx, 0)      # (T_full, N) safe for gather
 
-            # Select valid data based on self.indices.
-            valid_data = data[self.indices, ...]  # Shape: (T, assets, 1)
+            # data: (T_full, N, 1)
+            def _gather_one(col_T1, idx_T):
+                # col_T1: (T_full, 1) for one asset
+                # idx_T : (T_full,)
+                g = jnp.take(col_T1, idx_T, axis=0, mode='clip')    # (T_full, 1)
+                # zero out padded rows
+                return jnp.where((idx_T >= 0)[:, None], g, 0.0)
 
-            # Apply the rolling function.
+            # Vectorize across assets: in_axes (asset axis)
+            compressed = jax.vmap(_gather_one, in_axes=(1, 1), out_axes=1)(data, idx_safe)  # (T_full, N, 1)
+
+            # Apply over compressed stream
             rolled_result = TimeSeriesOps.u_roll(
-                data=valid_data,
+                data=compressed,
                 window_size=self.window,
                 func=func,
                 overlap_factor=overlap_factor,
                 **func_kwargs
-            )
+            ) # (T_full, N, 1)
+            
+            # Scatter back
+            T_full, N = data.shape[0], data.shape[1]
 
-            T_full = data.shape[0]
-            # Prepare a full array (with the original time dimension) filled with NaNs.
-            rolled_full = jnp.full((T_full, *rolled_result.shape[1:]), jnp.nan, dtype=rolled_result.dtype)
-            # Insert the rolled results into their proper positions.
-            rolled_full = rolled_full.at[self.indices].set(rolled_result)
-            # Remove the extra dimension.
-            rolled_full = rolled_full[..., 0]  # Final shape: (T_full, assets)
+            def _scatter_one(tidx_T, upd_T1):
+                # tidx_T: (T_full,) original time indices (with -1 for invalid)
+                # upd_T1: (T_full, 1) values to place
+                valid    = (tidx_T >= 0)
+                tidx_safe= jnp.where(valid, tidx_T, 0)
 
-            # Reconstruct the DataArray with the rolled data.
+                vals = jnp.zeros((T_full, 1), dtype=upd_T1.dtype)
+                wts  = jnp.zeros((T_full,),    dtype=jnp.float32)
+
+                vals = vals.at[tidx_safe].add(jnp.where(valid[:, None], upd_T1, 0.0))  # (T_full, 1)
+                wts  = wts.at[tidx_safe].add(valid.astype(jnp.float32))                # (T_full,)
+                return vals, wts
+
+            # Vectorize across assets
+            vals_cols, wts_cols = jax.vmap(_scatter_one, in_axes=(1, 1), out_axes=(1, 1))(idx, rolled_result)
+            # vals_cols: (T_full, N, 1), wts_cols: (T_full, N)
+
+            # Finalize
+            rolled_full = jnp.where((wts_cols > 0)[..., None], vals_cols / wts_cols[..., None], jnp.nan)  # (T_full, N, 1)
+            rolled_full = rolled_full[..., 0]  # (T_full, N)
+
+            # Rebuild DataArray with original coords
             rolled_da = stacked_obj.copy(data=rolled_full)
-            # Unstack back to the original multi-dimensional time coordinates.
-            unstacked_da = rolled_da.unstack("time_index")
-            return unstacked_da
+            return rolled_da.unstack("time_index")
+
         else:
             print(f'warning:{self.obj.dims} cross-sectional rolling not supported yet.')
             return self.obj

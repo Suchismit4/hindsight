@@ -599,7 +599,7 @@ class FunctionCall(Node):
         """
         func_key = f"_func_{self.name}"
         if func_key not in context:
-            raise ValueError(f"Function '{self.name}' not found in context")
+            raise ValueError(f"Function '{func_key}' not found in context")
         
         # Get the function from the context
         func = context[func_key]

@@ -158,8 +158,126 @@ class FormulaManager:
             KeyError: If formula doesn't exist
         """
         if name not in self.formulas:
+            # Check if this is a built-in function that can be used as a formula
+            if self._is_builtin_function(name):
+                return self._create_builtin_formula_definition(name)
             raise KeyError(f"Formula '{name}' not found")
         return self.formulas[name]
+    
+    def _is_builtin_function(self, name: str) -> bool:
+        """
+        Check if a name corresponds to a built-in function.
+        
+        Args:
+            name: Function name to check
+            
+        Returns:
+            True if the name is a registered built-in function
+        """
+        from .functions import get_registered_functions
+        return name in get_registered_functions()
+    
+    def _create_builtin_formula_definition(self, name: str) -> Dict[str, Any]:
+        """
+        Create a formula definition for a built-in function.
+        
+        Args:
+            name: Name of the built-in function
+            
+        Returns:
+            Formula definition dictionary that mimics YAML structure
+        """
+        from .functions import get_registered_functions, get_function_metadata
+        
+        functions_registry = get_registered_functions()
+        if name not in functions_registry:
+            raise KeyError(f"Built-in function '{name}' not found")
+        
+        func = functions_registry[name]
+        
+        # Get function metadata if available
+        try:
+            metadata = get_function_metadata(name)
+            description = metadata.get('description', f"Built-in function: {name}")
+        except:
+            description = f"Built-in function: {name}"
+        
+        # Analyze function signature to create variable definitions
+        import inspect
+        sig = inspect.signature(func)
+        variables = {}
+        
+        for param_name, param in sig.parameters.items():
+            if param_name == 'data':
+                # Map 'data' parameter to 'price' to match existing formula conventions
+                variables['price'] = {
+                    'type': 'dataarray',
+                    'description': f'Price data for {name}'
+                }
+            elif param_name in ['window', 'periods', 'period']:
+                variables[param_name] = {
+                    'type': 'number',
+                    'description': f'Window size for {name}',
+                    'validation': {'min': 1}
+                }
+            elif param_name in ['alpha', 'beta', 'gamma']:
+                variables[param_name] = {
+                    'type': 'number',
+                    'description': f'Smoothing parameter for {name}',
+                    'validation': {'min': 0, 'max': 1}
+                }
+            elif param_name == 'weights':
+                variables[param_name] = {
+                    'type': 'array',
+                    'description': f'Weights array for {name}'
+                }
+            else:
+                # Generic parameter
+                variables[param_name] = {
+                    'type': 'number',
+                    'description': f'Parameter {param_name} for {name}'
+                }
+            
+            # Add default value if available
+            if param.default != inspect.Parameter.empty:
+                variables[param_name]['default'] = param.default
+        
+        # Create the expression string - this calls the function with its parameters
+        param_names = list(sig.parameters.keys())
+        if param_names:
+            # Build expression like "sma($price, $window)"
+            # Map 'data' parameter to 'price' to match existing conventions
+            param_refs = []
+            for param in param_names:
+                if param == 'data':
+                    param_refs.append('$price')
+                else:
+                    param_refs.append(f'${param}')
+            expression = f"{name}({', '.join(param_refs)})"
+        else:
+            expression = f"{name}()"
+        
+        formula_def = {
+            'description': description,
+            'expression': expression,
+            'return_type': 'dataarray',
+            'variables': variables,
+            'functions': {
+                name: {
+                    'description': f'Built-in function {name}',
+                    'args': [
+                        {
+                            'name': param_name,
+                            'type': 'dataarray' if param_name == 'data' else 'number',
+                            'description': f'Parameter {param_name}'
+                        }
+                        for param_name in param_names
+                    ]
+                }
+            }
+        }
+        
+        return formula_def
     
     def _update_dependency_graph(self, formula_name: str, definition: Dict[str, Any]) -> None:
         """
@@ -251,7 +369,7 @@ class FormulaManager:
         
         # Collect all formulas and their dependencies
         for formula_name in formula_names:
-            if formula_name in self.formulas:
+            if formula_name in self.formulas or self._is_builtin_function(formula_name):
                 dependency_chain = self._resolve_dependencies(formula_name)
                 all_formulas.update(dependency_chain)
         
@@ -627,16 +745,11 @@ class FormulaManager:
         builtin_context = get_function_context()
         context.update(builtin_context)
         
-
-        
         # Parse all formulas once (reuse for multiple configs)
         parsed_formulas = {}
         formula_definitions = {}
-            
+          
         for formula_name in formula_configs:
-            if formula_name not in self.formulas:
-                raise KeyError(f"Formula '{formula_name}' not found")
-            
             formula_def = self.get_formula(formula_name)
             formula_definitions[formula_name] = formula_def
             
