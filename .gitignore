@@ -27,6 +27,7 @@ venv/
 *.yml
 *.log
 *.txt
+*.md
 
 # Ignore the folder dev, build, .claude, .vscode
 dev/
@@ -55,3 +56,16 @@ __pycache__/
 
 # Ignore bat files
 *.bat
+
+# toml and claude files
+*.toml
+*.claude
+
+# Ignore the folder .codex
+.codex/
+
+#.ipynb files
+*.ipynb
+
+# checkpoint file ipynb
+.ipynb_checkpoints/
