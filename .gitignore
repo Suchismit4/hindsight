@@ -17,3 +17,41 @@ venv/
 
 # Ignore .DS_Store
 .DS_Store
+
+# Ignore .env
+.env
+
+# Ignore .config files, .yaml files, .yml files, .log files, .txt files
+*.config
+*.yaml
+*.yml
+*.log
+*.txt
+
+# Ignore the folder dev, build, .claude, .vscode
+dev/
+build/
+.claude/
+.vscode/
+
+# Ignore the folder source  
+source/
+
+# Ignore anything to do with __pycache__ even nested folders
+__pycache__/
+**__pycache__**
+
+# Ignore anything to do with .pytest_cache even nested folders
+.pytest_cache/
+**.pytest_cache**
+
+# Ignore anything to do with .ruff_cache even nested folders
+.ruff_cache/
+**.ruff_cache**
+
+# Ignore anything to do with .ruff_cache even nested folders
+.ruff_cache/
+**.ruff_cache**
+
+# Ignore bat files
+*.bat
