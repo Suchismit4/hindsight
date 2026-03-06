@@ -154,57 +154,23 @@ def from_table(
     return ds
 
 
-class Loader:
-    """
-    Compatibility shim for legacy call sites.
-
-    Keep only methods that are currently used by the library.
-    """
-
-    @staticmethod
-    def convert_sas_date(sas_date_col: pd.Series, epoch: str = "1960-01-01") -> pd.Series:
-        # Backward-compatible entry point for existing loader call sites.
-        return convert_sas_date(sas_date_col=sas_date_col, epoch=epoch)
-
-    @classmethod
-    def from_table(
-        cls,
-        data: pd.DataFrame,
-        time_column: str = "time",
-        asset_column: str = "asset",
-        feature_columns: Optional[List[str]] = None,
-        frequency: FrequencyType = FrequencyType.DAILY,
-    ) -> xr.Dataset:
-        del cls
-        # Thin wrapper to preserve old import path and signature.
-        return from_table(
-            data=data,
-            time_column=time_column,
-            asset_column=asset_column,
-            feature_columns=feature_columns,
-            frequency=frequency,
-        )
-
-    @classmethod
-    def load_simulated_data(
-        cls,
-        num_assets: int,
-        num_timesteps: int,
-        num_vars: int,
-        freq: FrequencyType = FrequencyType.DAILY,
-        start_date: str = "2000-01-01",
-    ) -> xr.Dataset:
-        del cls
-        # Lightweight synthetic panel for tests and notebooks.
-        assets = [f"asset_{i + 1}" for i in range(num_assets)]
-        time_index = pd.date_range(start=start_date, periods=num_timesteps, freq=freq.value)
-        multi_index = pd.MultiIndex.from_product([assets, time_index], names=["asset", "time"])
-        df = pd.DataFrame(index=multi_index).reset_index()
-        for i in range(num_vars):
-            df[f"var_{i + 1}"] = np.random.randn(len(df))
-        return from_table(
-            data=df,
-            time_column="time",
-            asset_column="asset",
-            frequency=freq,
-        )
+def load_simulated_data(
+    num_assets: int,
+    num_timesteps: int,
+    num_vars: int,
+    freq: FrequencyType = FrequencyType.DAILY,
+    start_date: str = "2000-01-01",
+) -> xr.Dataset:
+    """Generate a lightweight synthetic panel dataset for tests and notebooks."""
+    assets = [f"asset_{i + 1}" for i in range(num_assets)]
+    time_index = pd.date_range(start=start_date, periods=num_timesteps, freq=freq.value)
+    multi_index = pd.MultiIndex.from_product([assets, time_index], names=["asset", "time"])
+    df = pd.DataFrame(index=multi_index).reset_index()
+    for i in range(num_vars):
+        df[f"var_{i + 1}"] = np.random.randn(len(df))
+    return from_table(
+        data=df,
+        time_column="time",
+        asset_column="asset",
+        frequency=freq,
+    )

@@ -11,20 +11,10 @@ The new system provides:
 - More extensible design
 """
 
-import warnings
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
-
-
-# Emit deprecation warning when this module is imported
-warnings.warn(
-    "src.data.managers.config_schema is deprecated. "
-    "Use src.pipeline.spec for new pipeline specifications.",
-    DeprecationWarning,
-    stacklevel=2
-)
 
 
 @dataclass

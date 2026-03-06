@@ -16,6 +16,7 @@ from src.data.ast.manager import FormulaManager
 from src.data.ast.functions import get_function_context
 from src.data.core.jit import prepare_for_jit, restore_from_jit
 from src.pipeline.cache import GlobalCacheManager, CacheStage
+from src.pipeline.data_handler.merge import merge_datasets
 
 from .schema import PipelineSpec, DataSourceSpec, FormulaOperationSpec
 from .result import ExecutionResult, OperationResult
@@ -96,7 +97,7 @@ class PipelineExecutor:
         result.cache_keys['data'] = data_key
         
         # Merge data sources into single dataset for feature engineering
-        merged_data = self._merge_data_sources(data_dict)
+        merged_data = self._merge_data_sources(spec, data_dict)
         
         # Stage 2: Feature engineering (L3)
         if spec.features and spec.features.operations:
@@ -241,6 +242,8 @@ class PipelineExecutor:
             'start_date': start_date,
             'end_date': end_date,
             'filters': source_spec.filters,
+            'external_tables': source_spec.external_tables,
+            'columns': source_spec.columns,
             'processors': source_spec.processors,
         }
     
@@ -281,17 +284,12 @@ class PipelineExecutor:
         # Add filters
         if source_spec.filters:
             config['filters'] = source_spec.filters
-        
-        # Add processors
+        if source_spec.external_tables:
+            config['external_tables'] = source_spec.external_tables
+        if source_spec.columns:
+            config['columns_to_read'] = source_spec.columns
         if source_spec.processors:
-            # Convert processor list to dict format expected by DataManager
-            processors_dict = {}
-            for processor in source_spec.processors:
-                proc_type = processor.get('type')
-                if proc_type:
-                    # For now, just set to True (can be enhanced later)
-                    processors_dict[proc_type] = True
-            config['processors'] = processors_dict
+            config['processors'] = source_spec.processors
         
         # Create data request for DataManager
         data_request = [{
@@ -305,7 +303,7 @@ class PipelineExecutor:
         # Return the dataset
         return result[data_path]
     
-    def _merge_data_sources(self, datasets: Dict[str, xr.Dataset]) -> xr.Dataset:
+    def _merge_data_sources(self, spec: PipelineSpec, datasets: Dict[str, xr.Dataset]) -> xr.Dataset:
         """
         Merge multiple data sources into a single dataset.
         
@@ -320,7 +318,29 @@ class PipelineExecutor:
         """
         if len(datasets) == 0:
             raise ValueError("No datasets to merge")
-        
+
+        if spec.merges:
+            base_name = spec.merge_base or next(iter(datasets.keys()))
+            if base_name not in datasets:
+                raise ValueError(f"Merge base '{base_name}' not found in loaded datasets")
+
+            referenced = {base_name} | {merge_cfg["right_name"] for merge_cfg in spec.merges}
+            unmerged = set(datasets.keys()) - referenced
+            if unmerged:
+                raise ValueError(
+                    f"Data sources {sorted(unmerged)} are loaded but not included in ordered merges"
+                )
+
+            print(f"\nMerging data sources with declared merge plan (base={base_name})...")
+            merged = merge_datasets(
+                base=datasets[base_name],
+                datasets=datasets,
+                merge_config=spec.merges,
+            )
+            print(f"  Merged shape: {dict(merged.dims)}")
+            print(f"  Merged variables: {list(merged.data_vars)}")
+            return merged
+
         if len(datasets) == 1:
             # Single dataset, return as-is
             return next(iter(datasets.values()))
@@ -880,4 +900,3 @@ class PipelineExecutor:
         print(f"    Predictions added as '{output_var}'")
         
         return result.pred_ds, result
-

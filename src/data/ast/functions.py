@@ -48,6 +48,13 @@ from src.data.core.operations import triple_exponential_smoothing as core_triple
 from src.data.core.operations import adaptive_ema as core_adaptive_ema
 from src.data.core.operations import sum_func as core_sum_func
 
+def _dispatch_rolling(fn, data, *, window, func_name, **reduce_kwargs):
+    """Dispatch a rolling reduction over Dataset or DataArray."""
+    if isinstance(data, (xr.Dataset, xr.DataArray)):
+        return data.dt.rolling(dim='time', window=window).reduce(fn, **reduce_kwargs)
+    raise TypeError(f"Unsupported data type for {func_name}: {type(data)}")
+
+
 # Type variables for better type hinting
 F = TypeVar('F', bound=Callable[..., Any])
 T = TypeVar('T')
@@ -523,16 +530,7 @@ def sma(data, window):
         >>> # Single variable calculation
         >>> close_avg = sma($close, 30)  # 30-day moving average for just close prices
     """
-    if isinstance(data, xr.Dataset):
-        # Dataset case: rolling computes masks on-demand
-        return data.dt.rolling(dim='time', window=window).reduce(core_mean)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_mean)
-    else:
-        # Handle other types (e.g., numpy arrays)
-        raise TypeError(f"Unsupported data type for sma: {type(data)}")
+    return _dispatch_rolling(core_mean, data, window=window, func_name='sma')
 
 @register_function(category="temporal")
 def ema(data, window):
@@ -563,16 +561,7 @@ def ema(data, window):
         >>> # Single variable calculation
         >>> close_ema = ema($close, 30)  # 30-day EMA for just close prices
     """    
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        return data.dt.rolling(dim='time', window=window).reduce(core_ema)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_ema)
-    else:
-        # Handle other types (e.g., numpy arrays)
-        raise TypeError(f"Unsupported data type for ema: {type(data)}")
+    return _dispatch_rolling(core_ema, data, window=window, func_name='ema')
 
 @register_function(category="temporal")
 def rma(data, window):
@@ -603,16 +592,7 @@ def rma(data, window):
         >>> # Single variable calculation
         >>> close_rma = rma($close, 30)  # 30-day RMA for just close prices
     """    
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        return data.dt.rolling(dim='time', window=window).reduce(core_rma)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_rma)
-    else:
-        # Handle other types (e.g., numpy arrays)
-        raise TypeError(f"Unsupported data type for rma: {type(data)}")
+    return _dispatch_rolling(core_rma, data, window=window, func_name='rma')
 
 
 @register_function(category="temporal") 
@@ -644,16 +624,7 @@ def gain(data, window):
         >>> # Single variable calculation
         >>> close_gain = gain($close, 30)  # 30-day gain for just close prices
     """
-    if isinstance(data, xr.Dataset):
-        # Dataset case: rolling computes masks on-demand
-        return data.dt.rolling(dim='time', window=window).reduce(core_gain)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-                return data.dt.rolling(dim='time', window=window).reduce(core_gain)
-    else:
-        # Handle other types (e.g., numpy arrays)
-        raise TypeError(f"Unsupported data type for gain: {type(data)}")
+    return _dispatch_rolling(core_gain, data, window=window, func_name='gain')
 
 @register_function(category="temporal") 
 def loss(data, window):
@@ -683,16 +654,7 @@ def loss(data, window):
         >>> # Single variable calculation
         >>> close_loss = loss($close, 30)  # 30-day loss for just close prices
     """
-    if isinstance(data, xr.Dataset):
-        # Dataset case: rolling computes masks on-demand
-        return data.dt.rolling(dim='time', window=window).reduce(core_loss)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_loss)
-    else:
-        # Handle other types (e.g., numpy arrays)
-        raise TypeError(f"Unsupported data type for loss: {type(data)}")
+    return _dispatch_rolling(core_loss, data, window=window, func_name='loss')
 
 @register_function(category="temporal")
 def wma(data, window, weights=None):
@@ -732,15 +694,7 @@ def wma(data, window, weights=None):
         if len(weights) != window:
             raise ValueError(f"Weights array length ({len(weights)}) must equal window size ({window})")
     
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        return data.dt.rolling(dim='time', window=window).reduce(core_wma, weights=weights)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_wma, weights=weights)
-    else:
-        raise TypeError(f"Unsupported data type for wma: {type(data)}")
+    return _dispatch_rolling(core_wma, data, window=window, func_name='wma', weights=weights)
 
 @register_function(category="temporal")
 def moving_median(data, window):
@@ -770,15 +724,7 @@ def moving_median(data, window):
         >>> # Single variable calculation
         >>> close_median = moving_median($close, 30)  # 30-day moving median for just close prices
     """
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        return data.dt.rolling(dim='time', window=window).reduce(core_median)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_median)
-    else:
-        raise TypeError(f"Unsupported data type for moving_median: {type(data)}")
+    return _dispatch_rolling(core_median, data, window=window, func_name='moving_median')
 
 @register_function(category="temporal")
 def moving_mode(data, window):  
@@ -808,15 +754,7 @@ def moving_mode(data, window):
         >>> # Single variable calculation
         >>> close_mode = moving_mode($close, 30)  # 30-day moving mode for just close prices
     """
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        return data.dt.rolling(dim='time', window=window).reduce(core_mode)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_mode)
-    else:
-        raise TypeError(f"Unsupported data type for moving_mode: {type(data)}")
+    return _dispatch_rolling(core_mode, data, window=window, func_name='moving_mode')
 
 # Add a utility function to handle shift operations with DataArrays
 @register_function(category="temporal")
@@ -949,21 +887,11 @@ def triple_exponential_smoothing(data, alpha=0.2, beta=0.1, gamma=0.1):
     if not (0 < gamma < 1):
         raise ValueError(f"Gamma must be between 0 and 1, got {gamma}")
     
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        # For stateful operations, we use window=1 since each point depends on the previous state
-        return data.dt.rolling(dim='time', window=1).reduce(
-            core_triple_exponential_smoothing, 
-            alpha=alpha, beta=beta, gamma=gamma
-        )
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        return data.dt.rolling(dim='time', window=1).reduce(
-                core_triple_exponential_smoothing,
-                alpha=alpha, beta=beta, gamma=gamma
-            )
-    else:
-        raise TypeError(f"Unsupported data type for triple_exponential_smoothing: {type(data)}")
+    return _dispatch_rolling(
+        core_triple_exponential_smoothing, data,
+        window=1, func_name='triple_exponential_smoothing',
+        alpha=alpha, beta=beta, gamma=gamma
+    )
 
 @register_function(category="temporal")
 def adaptive_ema(data, smoothing_factors):
@@ -1025,21 +953,11 @@ def adaptive_ema(data, smoothing_factors):
         elif smoothing_jax.ndim == 2:
             smoothing_jax = smoothing_jax[..., None]
     
-    if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
-        # For stateful operations, we use window=1 since each point depends on the previous state
-        return data.dt.rolling(dim='time', window=1).reduce(
-            core_adaptive_ema, 
-            smoothing_factors=smoothing_jax
-        )
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        return data.dt.rolling(dim='time', window=1).reduce(
-                core_adaptive_ema,
-                smoothing_factors=smoothing_jax
-            )
-    else:
-        raise TypeError(f"Unsupported data type for adaptive_ema: {type(data)}")
+    return _dispatch_rolling(
+        core_adaptive_ema, data,
+        window=1, func_name='adaptive_ema',
+        smoothing_factors=smoothing_jax
+    )
 
 @register_function(category="temporal")
 def rolling_sum(data, window):
@@ -1059,14 +977,7 @@ def rolling_sum(data, window):
     Examples:
         >>> rolling_sum($close, 10)  # 10-period rolling sum
     """
-    if isinstance(data, xr.Dataset):
-        return data.dt.rolling(dim='time', window=window).reduce(core_sum_func)
-    elif isinstance(data, xr.DataArray):
-        # DataArray case: rolling computes masks on-demand from the DataArray itself
-        # No need to look for masks in coordinates or parent dataset
-        return data.dt.rolling(dim='time', window=window).reduce(core_sum_func)
-    else:
-        raise TypeError(f"Unsupported data type for rolling_sum: {type(data)}")
+    return _dispatch_rolling(core_sum_func, data, window=window, func_name='rolling_sum')
 
 def register_built_in_functions():
     """Register built-in functions for common operations."""

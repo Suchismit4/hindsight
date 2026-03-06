@@ -100,8 +100,10 @@ class SpecParser:
         data_raw = raw.get('data', {})
         if not data_raw:
             raise ValueError("Specification must include 'data' field with at least one source")
-        
+
         data = SpecParser._parse_data_sources(data_raw)
+        merge_base = raw.get('merge_base')
+        merges = SpecParser._parse_merges(raw.get('merges', []))
         
         # Parse optional features
         features = None
@@ -126,6 +128,8 @@ class SpecParser:
             version=version,
             data=data,
             time_range=time_range,
+            merge_base=merge_base,
+            merges=merges,
             features=features,
             preprocessing=preprocessing,
             model=model,
@@ -162,10 +166,27 @@ class SpecParser:
                 dataset=dataset,
                 frequency=source_config.get('frequency'),
                 filters=source_config.get('filters', {}),
-                processors=source_config.get('processors', [])
+                external_tables=source_config.get('external_tables', []),
+                columns=source_config.get('columns', []),
+                processors=source_config.get('processors', {})
             )
-        
+
         return data_sources
+
+    @staticmethod
+    def _parse_merges(raw: Any) -> List[Dict[str, Any]]:
+        """Parse ordered merge configuration."""
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            raise ValueError("Specification 'merges' must be a list")
+
+        merges: List[Dict[str, Any]] = []
+        for merge in raw:
+            if not isinstance(merge, dict):
+                raise ValueError(f"Each merge config must be a dictionary, got {type(merge)}")
+            merges.append(merge)
+        return merges
     
     @staticmethod
     def _parse_features(raw: Dict[str, Any]) -> FeaturesSpec:
@@ -326,4 +347,3 @@ class SpecParser:
         
         with open(output_path, 'w') as f:
             yaml.dump(spec.to_dict(), f, default_flow_style=False, sort_keys=False)
-

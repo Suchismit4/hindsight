@@ -66,6 +66,10 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
             external_tables=external_tables,
             **config
         )
+
+        if {'identifier', 'date'}.issubset(df.columns):
+            df = df.sort_values(['identifier', 'date']).reset_index(drop=True)
+            df['count'] = df.groupby('identifier').cumcount()
         
         # Load CCM link table with basic filtering of invalid links
         ccm_path = "/wrds/crsp/sasdata/a_ccm/ccmxpf_linktable.sas7bdat"

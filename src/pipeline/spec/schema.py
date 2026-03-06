@@ -26,14 +26,18 @@ class DataSourceSpec:
         dataset: Dataset name within the provider (e.g., "crsp", "binance_spot")
         frequency: Data frequency (e.g., "daily", "hourly", "monthly")
         filters: Dictionary of filters to apply at DataFrame level
-        processors: List of processor configurations for xarray-level operations
+        external_tables: DataFrame-level side-table merge configs
+        columns: Optional source column subset to load
+        processors: Source-level post-processing configuration
     """
     
     provider: str
     dataset: str
     frequency: Optional[str] = None
     filters: Dict[str, Any] = field(default_factory=dict)
-    processors: List[Dict[str, Any]] = field(default_factory=list)
+    external_tables: List[Dict[str, Any]] = field(default_factory=list)
+    columns: List[str] = field(default_factory=list)
+    processors: Dict[str, Any] | List[Dict[str, Any]] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -42,6 +46,8 @@ class DataSourceSpec:
             'dataset': self.dataset,
             'frequency': self.frequency,
             'filters': self.filters,
+            'external_tables': self.external_tables,
+            'columns': self.columns,
             'processors': self.processors,
         }
 
@@ -235,6 +241,8 @@ class PipelineSpec:
         version: Version string (for tracking changes)
         data: Dictionary of data source specifications
         time_range: Dictionary with 'start' and 'end' date strings
+        merge_base: Optional base source name for ordered merges
+        merges: Optional ordered merge configuration list
         features: Optional feature engineering specification
         preprocessing: Optional preprocessing specification
         model: Optional model training specification
@@ -245,6 +253,8 @@ class PipelineSpec:
     version: str
     data: Dict[str, DataSourceSpec]
     time_range: Dict[str, str]
+    merge_base: Optional[str] = None
+    merges: List[Dict[str, Any]] = field(default_factory=list)
     features: Optional[FeaturesSpec] = None
     preprocessing: Optional[PreprocessingSpec] = None
     model: Optional[ModelSpec] = None
@@ -279,6 +289,7 @@ class PipelineSpec:
             raise ValueError("At least one data source is required")
         
         self.validate_data_sources()
+        self.validate_merges()
         
         # Validate features (if present)
         if self.features:
@@ -351,17 +362,51 @@ class PipelineSpec:
         """
         if not source_spec.processors:
             return
-        
-        for processor in source_spec.processors:
-            if not isinstance(processor, dict):
+
+        if isinstance(source_spec.processors, dict):
+            transforms = source_spec.processors.get("transforms")
+            if transforms is not None and not isinstance(transforms, list):
                 raise ValueError(
-                    f"Data source '{source_name}': processor must be a dictionary, got {type(processor)}"
+                    f"Data source '{source_name}': processors.transforms must be a list"
                 )
-            
-            if 'type' not in processor:
-                raise ValueError(
-                    f"Data source '{source_name}': processor missing 'type' field"
-                )
+            return
+
+        if isinstance(source_spec.processors, list):
+            for processor in source_spec.processors:
+                if not isinstance(processor, dict):
+                    raise ValueError(
+                        f"Data source '{source_name}': processor must be a dictionary, got {type(processor)}"
+                    )
+
+                if 'type' not in processor:
+                    raise ValueError(
+                        f"Data source '{source_name}': processor missing 'type' field"
+                    )
+            return
+
+        raise ValueError(
+            f"Data source '{source_name}': processors must be a dict or list, got {type(source_spec.processors)}"
+        )
+
+    def validate_merges(self) -> None:
+        """Validate ordered merge configuration."""
+        if not self.merges:
+            return
+
+        available_sources = set(self.data.keys())
+
+        if self.merge_base and self.merge_base not in available_sources:
+            raise ValueError(f"Merge base '{self.merge_base}' is not a declared data source")
+
+        for index, merge in enumerate(self.merges):
+            if not isinstance(merge, dict):
+                raise ValueError(f"Merge #{index} must be a dictionary, got {type(merge)}")
+
+            right_name = merge.get("right_name")
+            if not right_name:
+                raise ValueError(f"Merge #{index} is missing 'right_name'")
+            if right_name not in available_sources:
+                raise ValueError(f"Merge #{index} references unknown source '{right_name}'")
     
     def validate_formulas(self) -> None:
         """
@@ -408,6 +453,11 @@ class PipelineSpec:
             'time_range': self.time_range,
             'metadata': self.metadata,
         }
+
+        if self.merge_base:
+            result['merge_base'] = self.merge_base
+        if self.merges:
+            result['merges'] = self.merges
         
         if self.features:
             result['features'] = self.features.to_dict()
@@ -419,4 +469,3 @@ class PipelineSpec:
             result['model'] = self.model.to_dict()
         
         return result
-
