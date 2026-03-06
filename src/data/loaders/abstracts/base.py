@@ -17,8 +17,8 @@ from pathlib import Path
 import hashlib
 from abc import ABC, abstractmethod
 
-from src.data.core.util import FrequencyType
-from src.data.core.util import Loader as load
+from src.data.core.types import FrequencyType
+from src.data.loaders.table import from_table
 from src.data.processors.registry import post_processor
 from src.data.core.cache import CacheManager
 from src.data.filters.filters import apply_filters, parse_django_style_filters
@@ -101,7 +101,7 @@ class BaseDataSource(ABC):
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
 
-        return load.from_table(
+        return from_table(
             df,
             time_column='date',
             asset_column='identifier',

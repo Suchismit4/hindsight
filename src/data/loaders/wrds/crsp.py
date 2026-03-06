@@ -2,7 +2,7 @@
 
 import pandas as pd
 import xarray as xr
-from src.data.core.util import FrequencyType, Loader as ld
+from src.data.core.types import FrequencyType
 from .generic import GenericWRDSDataLoader
 import pyreadstat
 import numpy as np
@@ -54,23 +54,28 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
         """
         CRSP-specific preprocessing:
          - Calls the generic _preprocess_df with date_col='date', identifier_col='permno'.
-         - Converts 'permco' to int if present.
-         - Merging of msenames is removed to avoid duplicating company names.
-         - Merges msedist (distributions) and msedelist (delisting information) remain.
+         - Converts 'permco' and 'identifier' (permno) to int for consistent merging.
+         - External table merging (msenames, msedelist) is handled via external_tables config.
         """
-                    
+        # Extract parameters that need explicit handling
+        filters = config.pop('filters', {})
+        external_tables = config.pop('external_tables', [])
+        
         df = super()._preprocess_df(
             df,
             date_col='date',
             identifier_col='permno',
-            filters=config.get('filters', {}),
+            filters=filters,
+            external_tables=external_tables,
             **config
         )
 
-        # Convert 'permco' to int if present.
+        # Convert 'identifier' (permno) to int for consistent merging with Compustat
+        if 'identifier' in df.columns:
+            df['identifier'] = df['identifier'].astype(np.int64)
+        
+        # Convert 'permco' to int if present
         if 'permco' in df.columns:
             df.loc[:, 'permco'] = df['permco'].astype(int)  # in-place
-        
-        # print(df.columns)
         
         return df

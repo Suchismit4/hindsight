@@ -1,8 +1,9 @@
 # data/loaders/wrds/compustat.py
 
 import pandas as pd
+import numpy as np
 import xarray as xr
-from src.data.core.util import FrequencyType
+from src.data.core.types import FrequencyType
 from typing import Dict, Any, List
 from .generic import GenericWRDSDataLoader
 import pyreadstat
@@ -17,6 +18,9 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
         * "Y" -> funda.sas7bdat (annual)
         * "Q" -> fundq.sas7bdat (quarterly)
       Defaults to annual if not recognized.
+    
+    Note: After CCM linking, the identifier is switched from gvkey to permno
+    to enable direct merging with CRSP data.
     """
 
     COMP_FREQUENCY_MAP = {
@@ -46,16 +50,20 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
         """
         Compustat-specific preprocessing:
         - date_col='datadate' -> 'date'
-        - identifier_col='gvkey' -> 'identifier'
-        - Adds CCM linkage information for later CRSP linking
+        - Adds CCM linkage information for CRSP linking
+        - Switches identifier from gvkey to permno (for CRSP compatibility)
         """
+        # Get filters and pop from config
+        filters = config.pop('filters', {})
+        external_tables = config.pop('external_tables', [])
         
-        df['gvkey'] = df['gvkey'].astype(str)
+        # First, do basic preprocessing with gvkey as identifier
         df = super()._preprocess_df(
             df,
             date_col='datadate',
             identifier_col='gvkey',
-            filters=config.get('filters', {}),
+            filters=filters,
+            external_tables=external_tables,
             **config
         )
         
@@ -85,13 +93,13 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
         df['date'] = pd.to_datetime(df['date'])
         
         # Create date fields matching Fama-French methodology
-        df['yearend'] = df['date']    + pd.offsets.YearEnd(0)
-        df['jdate']   = df['yearend'] + pd.offsets.MonthEnd(6)
+        df['yearend'] = df['date'] + pd.offsets.YearEnd(0)
+        df['jdate'] = df['yearend'] + pd.offsets.MonthEnd(6)
         
         # Preserve the original CRSP permno name for clarity
         ccm = ccm.rename(columns={'lpermno': 'permno'})
         
-        # Merge CCM data with Compustat
+        # Merge CCM data with Compustat (identifier is currently gvkey)
         df = pd.merge(df, ccm, left_on='identifier', right_on='gvkey', how='left')
                 
         # Prune the valid links we can do bw comp and CCM.
@@ -104,8 +112,25 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
         # Set the date to the last day of the year
         df['date'] = df['date'].apply(lambda x: x.replace(month=12, day=31))
         
-        # Drop redundant gvkey column since we already have 'identifier'
-        if 'gvkey' in df.columns:
-            df = df.drop('gvkey', axis=1)
+        # CRITICAL: Switch identifier from gvkey to permno for CRSP compatibility
+        # This enables direct merging with CRSP data on the asset dimension
+        if 'permno' in df.columns:
+            # Drop rows where permno is NaN (no valid CCM link)
+            df = df.dropna(subset=['permno'])
+            
+            # Convert permno to int (CRSP uses integer permnos)
+            df['permno'] = df['permno'].astype(np.int64)
+            
+            # Replace identifier with permno
+            df['identifier'] = df['permno']
+            
+            print(f"Compustat: Switched identifier from gvkey to permno ({len(df)} rows with valid CCM links)")
+        else:
+            print("WARNING: permno column not found after CCM merge. Keeping gvkey as identifier.")
+        
+        # Drop redundant columns
+        cols_to_drop = ['gvkey'] if 'gvkey' in df.columns else []
+        if cols_to_drop:
+            df = df.drop(cols_to_drop, axis=1)
             
         return df

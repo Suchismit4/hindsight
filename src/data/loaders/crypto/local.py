@@ -14,7 +14,7 @@ import glob
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from src.data.core.util import FrequencyType
+from src.data.core.types import FrequencyType
 from src.data.loaders.abstracts.base import BaseDataSource
 
 

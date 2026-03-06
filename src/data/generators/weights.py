@@ -21,7 +21,7 @@ def linear_weights(window: int, **kwargs) -> jnp.ndarray:
     Returns:
         JAX array of linearly increasing weights
     """
-    return jnp.arange(1, window + 1, dtype=jnp.float32)
+    return jnp.arange(1, window + 1, dtype=jnp.float64)
 
 
 def exponential_weights(window: int, alpha: float = 0.1, **kwargs) -> jnp.ndarray:
@@ -36,7 +36,7 @@ def exponential_weights(window: int, alpha: float = 0.1, **kwargs) -> jnp.ndarra
     Returns:
         JAX array of exponentially decaying weights
     """
-    indices = jnp.arange(window, dtype=jnp.float32)
+    indices = jnp.arange(window, dtype=jnp.float64)
     weights = jnp.exp(-alpha * (window - 1 - indices))
     return weights
 
@@ -73,7 +73,7 @@ def alma_weights(window: int, offset: float = 0.85, sigma: int = 6, **kwargs) ->
     
     # Generate weights using Gaussian function
     # Note: indices go from 0 to window-1, where 0 represents most recent
-    indices = jnp.arange(window, dtype=jnp.float32)
+    indices = jnp.arange(window, dtype=jnp.float64)
     weights = jnp.exp(-((indices - m) ** 2) / (2 * s ** 2))
     
     # Reverse the weights so that weights[0] corresponds to most recent price
@@ -98,7 +98,7 @@ def fibonacci_weights(window: int,
     fib = [1, 1]
     for _ in range(2, window):
         fib.append(fib[-1] + fib[-2])
-    w = jnp.array(fib[:window], dtype=jnp.float32)
+    w = jnp.array(fib[:window], dtype=jnp.float64)
 
     # Normalize:
     w = w / jnp.sum(w)
@@ -129,14 +129,14 @@ def triangular_weights(window: int, **kwargs) -> jnp.ndarray:
     if window % 2 == 1:
         # Odd window size
         weights = jnp.concatenate([
-            jnp.arange(1, half + 2, dtype=jnp.float32),
-            jnp.arange(half, 0, -1, dtype=jnp.float32)
+            jnp.arange(1, half + 2, dtype=jnp.float64),
+            jnp.arange(half, 0, -1, dtype=jnp.float64)
         ])
     else:
         # Even window size
         weights = jnp.concatenate([
-            jnp.arange(1, half + 1, dtype=jnp.float32),
-            jnp.arange(half, 0, -1, dtype=jnp.float32)
+            jnp.arange(1, half + 1, dtype=jnp.float64),
+            jnp.arange(half, 0, -1, dtype=jnp.float64)
         ])
     
     return weights
@@ -160,7 +160,7 @@ def custom_weights(window: int, weights_array: Optional[Union[list, np.ndarray, 
     if weights_array is None:
         return linear_weights(window)
     
-    weights_array = jnp.asarray(weights_array, dtype=jnp.float32)
+    weights_array = jnp.asarray(weights_array, dtype=jnp.float64)
     
     if len(weights_array) != window:
         raise ValueError(f"weights_array length ({len(weights_array)}) must match window size ({window})")

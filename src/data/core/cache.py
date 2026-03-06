@@ -20,9 +20,8 @@ from datetime import datetime
 import pandas as pd
 from copy import deepcopy
 
-from src.data.core.util import FrequencyType, TimeSeriesIndex
+from src.data.core.types import TimeSeriesIndex
 from src.data.processors.registry import post_processor
-from src.data.core.util import Loader
 from src.data.processors import apply_processors
 
 
@@ -125,7 +124,13 @@ class CacheManager:
         # Exclude 'start_date' and 'end_date' from the key computation.
         key_parameters = {key: value for key, value in parameters.items() if key not in ("start_date", "end_date")}
         serializable_params = self._convert_to_serializable(key_parameters)
-        params_string = json.dumps(serializable_params, sort_keys=True)
+        # Use default=str to handle any remaining non-serializable types
+        # and avoid sort_keys issues with mixed types
+        try:
+            params_string = json.dumps(serializable_params, sort_keys=True, default=str)
+        except TypeError:
+            # Fallback: convert all keys to strings before sorting
+            params_string = json.dumps(serializable_params, default=str)
         return hashlib.md5(params_string.encode("utf-8")).hexdigest()
 
     def _find_existing_cache(self, cache_key: str, cache_directory: Path, parameters: Dict[str, Any]) -> Optional[Path]:

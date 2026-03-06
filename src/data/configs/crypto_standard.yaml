@@ -16,11 +16,3 @@ data:
         time_var: "date"
         identifier_var: "identifier"  # Symbol will become asset dimension
         
-      processors:
-        # No external merges needed for basic crypto data
-        # The symbol automatically becomes the asset dimension
-        
-        # Data transformations (minimal for crypto)
-        transforms: []
-          # The crypto loader already handles symbol -> asset mapping
-          # No additional transforms needed for basic use case 

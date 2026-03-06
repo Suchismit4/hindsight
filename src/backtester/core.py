@@ -658,11 +658,11 @@ class BacktestEngine:
         if missing_vars:
             raise ValueError(f"Market data missing required variables: {missing_vars}")
             
-        # Check that mask and mask_indices exist (needed for business day operations)
-        if 'mask' not in self.market_data.coords:
-            raise ValueError("Market data must have 'mask' coordinate")
-        if 'mask_indices' not in self.market_data.coords:
-            raise ValueError("Market data must have 'mask_indices' coordinate")
+        # REFACTORED: Masks are now computed on-demand instead of being stored as coordinates.
+        # This eliminates the need to check for their presence at initialization time.
+        # If mask and mask_indices are needed during backtesting (e.g., for rolling operations or
+        # business day shifts), they will be computed dynamically using .dt.compute_mask().
+        # This ensures masks remain consistent with any dataset transformations or slicing.
 
     def _precompute_windows(self):
         """Pre-compute all data windows for efficient backtesting.

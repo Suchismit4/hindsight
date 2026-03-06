@@ -51,6 +51,51 @@ price_ret:
           type: "number"
           description: "Number of periods to shift"
 
+price_ret_var:
+  description: "Price-only return (no distributions)"
+  expression: "$prc / shift($prc, $periods) - 1"
+  return_type: "dataarray"
+  variables:
+    prc:
+      type: "dataarray"
+      description: "Adjusted price data"
+    periods:
+      type: "number"
+      description: "Number of periods to shift"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
+# This is future peeking.
+fwd_return: 
+  description: "Forward return"
+  expression: "(shift($prc, -$periods) / $prc) - 1"
+  return_type: "dataarray"
+  variables:
+    prc:
+      type: "dataarray"
+      description: "Price data"
+    periods:
+      type: "number"
+      description: "Number of periods to shift"
+  functions:
+    shift:
+      description: "Lag operator over valid business periods"
+      args:
+        - name: "data"
+          type: "dataarray"
+          description: "Input data"
+        - name: "periods"
+          type: "number"
+          description: "Number of periods to shift"
+
 # ============================
 # Dividend Calculations
 # ============================

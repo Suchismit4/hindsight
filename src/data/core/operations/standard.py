@@ -291,10 +291,10 @@ def wma(i: int, carry, block: jnp.ndarray, window_size: int, weights: jnp.ndarra
     """
     # Default to linearly increasing weights if not provided
     if weights is None:
-        weights = jnp.arange(1, window_size + 1, dtype=jnp.float32)
+        weights = jnp.arange(1, window_size + 1, dtype=jnp.float64)
     else:
         # Ensure weights are a JAX array with correct dtype
-        weights = jnp.asarray(weights, dtype=jnp.float32)
+        weights = jnp.asarray(weights, dtype=jnp.float64)
     
     # Normalize weights so they sum to 1
     weights = weights / jnp.sum(weights)

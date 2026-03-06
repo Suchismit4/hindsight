@@ -11,7 +11,10 @@ data layer, including:
 """
 
 from .struct import DatasetDateTimeAccessor
-from .util import FrequencyType, TimeSeriesIndex, Loader, Rolling, prepare_for_jit, restore_from_jit
+from .jit import prepare_for_jit, restore_from_jit
+from .rolling import Rolling
+from .types import FrequencyType, TimeSeriesIndex
+from src.data.loaders.table import Loader
 from .operations import TimeSeriesOps
 from .cache import CacheManager
 from .provider import Provider, register_provider, get_provider

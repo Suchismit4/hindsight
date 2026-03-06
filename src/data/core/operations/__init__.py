@@ -172,7 +172,7 @@ class TimeSeriesOps(eqx.Module):
         ) -> jnp.ndarray:
             t, n, j = block.shape
 
-            values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float32)
+            values = jnp.zeros((t - window_size + 1, n, j), dtype=jnp.float64)
 
             # Initialize carry with the func (i == -1 case)
             initial_value, carry = func(-1, None, block, window_size, **func_kwargs)

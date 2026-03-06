@@ -27,7 +27,7 @@ Examples:
     >>> from src.data.ast.parser import parse_formula
     >>> formula = parse_formula("my_sum(1, 2, 3)")
     >>> formula.evaluate(get_function_context())
-    Array(6., dtype=float32)
+    Array(6., dtype=float64)
 """
 
 import inspect
@@ -316,9 +316,7 @@ def clear_registry() -> None:
     # Re-register built-in functions
     register_built_in_functions()
 
-# ============================
 # Built-in Financial Functions
-# ============================
 
 @register_function(category="conditional")
 def coalesce(a, b):
@@ -490,9 +488,9 @@ def mean(data, dim=None):
         
     Examples:
         >>> mean(jnp.array([1, 2, 3, 4, 5]))
-        Array(3., dtype=float32)
+        Array(3., dtype=float64)
         >>> mean(jnp.array([[1, 2], [3, 4]]), dim=0)
-        Array([2., 3.], dtype=float32)
+        Array([2., 3.], dtype=float64)
     """
     return data.mean(dim=dim)
 
@@ -526,29 +524,12 @@ def sma(data, window):
         >>> close_avg = sma($close, 30)  # 30-day moving average for just close prices
     """
     if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
+        # Dataset case: rolling computes masks on-demand
         return data.dt.rolling(dim='time', window=window).reduce(core_mean)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_mean)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_mean)
     else:
         # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for sma: {type(data)}")
@@ -586,26 +567,9 @@ def ema(data, window):
         # Dataset case: use built-in rolling method with dataset's mask
         return data.dt.rolling(dim='time', window=window).reduce(core_ema)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_ema)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_ema)
     else:
         # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for ema: {type(data)}")
@@ -643,26 +607,9 @@ def rma(data, window):
         # Dataset case: use built-in rolling method with dataset's mask
         return data.dt.rolling(dim='time', window=window).reduce(core_rma)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_rma)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_rma)
     else:
         # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for rma: {type(data)}")
@@ -677,8 +624,9 @@ def gain(data, window):
     of size 'window' along the time dimension.
     
     The function handles both Dataset and DataArray inputs:
-    - For Dataset inputs, it uses the Dataset's built-in mask coordinates
-    - For DataArray inputs, it uses the mask from the parent Dataset or from context
+    - For Dataset inputs, it uses the Dataset's built-in rolling method
+    - For DataArray inputs, it uses the DataArray's built-in rolling method
+    - Masks are computed on-demand by the rolling operation itself
         
     Args:
         data: Input array or dataset
@@ -697,29 +645,12 @@ def gain(data, window):
         >>> close_gain = gain($close, 30)  # 30-day gain for just close prices
     """
     if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
+        # Dataset case: rolling computes masks on-demand
         return data.dt.rolling(dim='time', window=window).reduce(core_gain)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_gain)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+                return data.dt.rolling(dim='time', window=window).reduce(core_gain)
     else:
         # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for gain: {type(data)}")
@@ -753,29 +684,12 @@ def loss(data, window):
         >>> close_loss = loss($close, 30)  # 30-day loss for just close prices
     """
     if isinstance(data, xr.Dataset):
-        # Dataset case: use built-in rolling method with dataset's mask
+        # Dataset case: rolling computes masks on-demand
         return data.dt.rolling(dim='time', window=window).reduce(core_loss)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_loss)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_loss)
     else:
         # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for loss: {type(data)}")
@@ -822,28 +736,10 @@ def wma(data, window, weights=None):
         # Dataset case: use built-in rolling method with dataset's mask
         return data.dt.rolling(dim='time', window=window).reduce(core_wma, weights=weights)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_wma, weights=weights)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_wma, weights=weights)
     else:
-        # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for wma: {type(data)}")
 
 @register_function(category="temporal")
@@ -878,28 +774,10 @@ def moving_median(data, window):
         # Dataset case: use built-in rolling method with dataset's mask
         return data.dt.rolling(dim='time', window=window).reduce(core_median)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_median)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_median)
     else:
-        # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for moving_median: {type(data)}")
 
 @register_function(category="temporal")
@@ -934,28 +812,10 @@ def moving_mode(data, window):
         # Dataset case: use built-in rolling method with dataset's mask
         return data.dt.rolling(dim='time', window=window).reduce(core_mode)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_mode)
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_mode)
     else:
-        # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for moving_mode: {type(data)}")
 
 # Add a utility function to handle shift operations with DataArrays
@@ -996,28 +856,19 @@ def shift(data, periods=1):
             
     elif isinstance(data, xr.DataArray):
         # Check if this DataArray has the multi-dimensional time structure
-        if 'year' in data.coords and 'month' in data.coords and 'day' in data.coords:
-            # DataArray case with multi-dimensional time: need to handle mask explicitly
-            mask_indices = None
-            if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-                parent_ds = data.attrs['_parent_dataset']
-                if 'mask_indices' in parent_ds.coords:
-                    mask_indices = parent_ds.coords['mask_indices'].values
-                    
-            if mask_indices is not None:
-                # Call dt.shift directly, passing mask_indices
-                import jax.numpy as jnp
-                return data.dt.shift(periods=periods, mask_indices=jnp.array(mask_indices))
-            else:
-                # If mask_indices cannot be found, raise an error
-                raise ValueError(
-                    "Shift operation on DataArray with multi-dimensional time structure requires mask_indices. "
-                    "Ensure the DataArray originated from a Dataset with these coordinates, "
-                    "or provide them explicitly if calling the function directly."
-                )
-        else:
-            # Use simple xarray shift for regular time dimensions
+        if {'year', 'month', 'day'}.issubset(data.coords):
+            # Delegate to the accessor which knows how to handle business-day-aware shifting
+            print(f"Shifting with business-day-aware shifting...")
+            return data.dt.shift(periods=periods)
+        elif 'time' in data.dims:
+            # Regular 1D time dimension – fall back to native xarray shift
             return data.shift(time=periods)
+        else:
+            # No recognizable time dimension; return a copy to avoid silent failures
+            raise ValueError(
+                "Cannot determine time dimension for shift; expected coords including "
+                "'year','month','day' or a 'time' dimension."
+            )
     else:
         # Handle numpy arrays or other types
         raise TypeError(f"Unsupported data type for shift: {type(data)}")
@@ -1106,31 +957,12 @@ def triple_exponential_smoothing(data, alpha=0.2, beta=0.1, gamma=0.1):
             alpha=alpha, beta=beta, gamma=gamma
         )
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=1, mask=mask, mask_indices=indices).reduce(
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        return data.dt.rolling(dim='time', window=1).reduce(
                 core_triple_exponential_smoothing,
                 alpha=alpha, beta=beta, gamma=gamma
             )
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
     else:
-        # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for triple_exponential_smoothing: {type(data)}")
 
 @register_function(category="temporal")
@@ -1184,10 +1016,10 @@ def adaptive_ema(data, smoothing_factors):
         else:
             raise ValueError(f"Unexpected smoothing_factors shape: {smoothing_vals.shape}")
             
-        smoothing_jax = jnp.asarray(smoothing_vals)
+        smoothing_jax = jnp.asarray(smoothing_vals, dtype=jnp.float64)
     else:
         # Already a JAX/numpy array
-        smoothing_jax = jnp.asarray(smoothing_factors)
+        smoothing_jax = jnp.asarray(smoothing_factors, dtype=jnp.float64)
         if smoothing_jax.ndim == 1:
             smoothing_jax = smoothing_jax[:, None, None]
         elif smoothing_jax.ndim == 2:
@@ -1201,31 +1033,12 @@ def adaptive_ema(data, smoothing_factors):
             smoothing_factors=smoothing_jax
         )
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            # Call dt.rolling directly, passing mask and indices
-            return data.dt.rolling(dim='time', window=1, mask=mask, mask_indices=indices).reduce(
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        return data.dt.rolling(dim='time', window=1).reduce(
                 core_adaptive_ema,
                 smoothing_factors=smoothing_jax
             )
-        else:
-            # If mask/indices cannot be found, raise an error
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
     else:
-        # Handle other types (e.g., numpy arrays)
         raise TypeError(f"Unsupported data type for adaptive_ema: {type(data)}")
 
 @register_function(category="temporal")
@@ -1249,24 +1062,9 @@ def rolling_sum(data, window):
     if isinstance(data, xr.Dataset):
         return data.dt.rolling(dim='time', window=window).reduce(core_sum_func)
     elif isinstance(data, xr.DataArray):
-        # DataArray case: need to handle mask explicitly
-        mask = None
-        indices = None
-        if hasattr(data, 'attrs') and '_parent_dataset' in data.attrs:
-            parent_ds = data.attrs['_parent_dataset']
-            if 'mask' in parent_ds.coords:
-                mask = parent_ds.coords['mask'].values
-            if 'mask_indices' in parent_ds.coords:
-                indices = parent_ds.coords['mask_indices'].values
-                
-        if mask is not None and indices is not None:
-            return data.dt.rolling(dim='time', window=window, mask=mask, mask_indices=indices).reduce(core_sum_func)
-        else:
-            raise ValueError(
-                "Rolling operation on DataArray requires mask and mask_indices. "
-                "Ensure the DataArray originated from a Dataset with these coordinates, "
-                "or provide them explicitly if calling the function directly."
-            )
+        # DataArray case: rolling computes masks on-demand from the DataArray itself
+        # No need to look for masks in coordinates or parent dataset
+        return data.dt.rolling(dim='time', window=window).reduce(core_sum_func)
     else:
         raise TypeError(f"Unsupported data type for rolling_sum: {type(data)}")
 

@@ -8,7 +8,7 @@ from src.data.loaders.abstracts.base import BaseDataSource
 from typing import Dict, Any, List
 import xarray as xr
 import pandas as pd
-from src.data.core.util import FrequencyType
+from src.data.core.types import FrequencyType
 
 class GenericOpenBBDataFetcher(BaseDataSource):
     """

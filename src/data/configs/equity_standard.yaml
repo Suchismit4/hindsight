@@ -11,32 +11,35 @@ data:
       provider: "wrds"
       dataset: "crsp"
       frequency: "monthly"
-      
+       
       schema:
         time_var: "date"
         identifier_var: "permno"
         
+      # Filters for common shares on major exchanges
+      filters:
+        shrcd__in: [10, 11]        # Common shares only
+        exchcd__in: [1, 2, 3]      # NYSE, AMEX, NASDAQ
+      
+      # External tables to merge at DataFrame level (before xarray conversion)
+      external_tables:
+        # Delisting returns - replace ret with dlret when available
+        - path: "/wrds/crsp/sasdata/a_stock/msedelist.sas7bdat"
+          type: "replace"
+          on: "permno"
+          time_column: "dlstdt"
+          from_column: "dlret"
+          to_column: "ret"
+          
+        # Company names and metadata - static lookup
+        - path: "/wrds/crsp/sasdata/a_stock/msenames.sas7bdat"
+          type: "lookup"
+          on: "permno"
+          columns: ["comnam", "exchcd", "shrcd"]
+        
+      # Post-processing transforms (after xarray conversion)
       processors:
-        # External table merges
-        merges:
-          # Company names and metadata
-          # Delisting information  
-          - source_path: "/wrds/crsp/sasdata/a_stock/msedelist.sas7bdat"
-            type: "replace_values"
-            "on": "permno"
-            from_var: "dlret"
-            to_var: "ret"
-            time_column: "dlstdt"
-
-          # Company names and metadata
-          - source_path: "/wrds/crsp/sasdata/a_stock/msenames.sas7bdat"
-            type: "2d_table"
-            "on": "permno"
-            columns: ["comnam", "exchcd"]
-
-            
-        # Data transformations
         transforms:
           - type: "set_coordinates"
             coord_type: "permco"
-          - type: "fix_market_equity" 
+          - type: "fix_market_equity"

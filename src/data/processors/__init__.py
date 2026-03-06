@@ -4,9 +4,8 @@ Data processors for xarray datasets.
 This module provides post-processors for transforming xarray datasets. Each processor
 implements a specific financial data transformation, including:
 
-1. Data merging and replacement operations
-2. Coordinate handling (e.g., setting PERMNO, PERMCO as coordinates)
-3. Financial calculations and corrections (e.g., preferred stock, market equity)
+1. Coordinate handling (e.g., setting PERMNO, PERMCO as coordinates)
+2. Financial calculations and corrections (e.g., preferred stock, market equity)
 
 The module defines both traditional and Django-style processor configurations.
 Django-style configuration uses a more user-friendly format with shortcuts
@@ -30,16 +29,10 @@ from typing import Dict, Any, List, Union, Optional, TypeVar, Callable, Sequence
 
 import xarray as xr
 import pandas as pd
-from src.data.core.util import Loader
 from src.data.processors.registry import Registry, post_processor
 
-# Import all processors
+# Import processors (excluding merge-related ones which are now handled at DataFrame level)
 from src.data.processors.processors import (
-    # Dataset transformation processors
-    merge_2d_table,
-    merge_4d_table,
-    replace,
-    
     # Coordinate-related processors
     set_permno,
     set_permco,
@@ -56,38 +49,9 @@ ProcessorsList = List[ProcessorConfig]
 ProcessorsDictConfig = Dict[str, Union[bool, Dict[str, Any], List[Dict[str, Any]]]]
 
 # Define processor configuration shortcuts (Django-style to traditional mapping)
+# NOTE: Merge-related processors have been removed. External table merging now happens
+# at the DataFrame level before xarray conversion. See GenericWRDSDataLoader.
 PROCESSOR_SHORTCUTS = {
-    # Data replacement and merging
-    "replace_values": {
-        "proc": "replace",
-        "options_mapping": {
-            "source": "src",
-            "from_var": "from",
-            "to_var": "to",
-            "identifier": "identifier",
-            "rename": "rename"
-        }
-    },
-    "merge_table": {
-        "proc": "merge_2d_table",
-        "options_mapping": {
-            "source": "src",
-            "axis": "ax1",
-            "column": "ax2",
-            "identifier": "identifier"
-        }
-    },
-    "merge_4d_table": {
-        "proc": "merge_4d_table",
-        "options_mapping": {
-            "source": "src",
-            "variables": "variables",
-            "identifier": "identifier",
-            "time_column": "time_column",
-            "rename": "rename"
-        }
-    },
-    
     # Coordinate handling
     "set_permno_coord": {
         "proc": "set_permno",
@@ -116,9 +80,6 @@ __all__ = [
     'Registry',
     
     # Processors
-    'merge_2d_table',
-    'merge_4d_table',
-    'replace',
     'set_permno',
     'set_permco',
     'ps',
@@ -136,65 +97,68 @@ __all__ = [
     'ProcessorsDictConfig'
 ]
 
-def _map_options(options: Dict[str, Any], options_mapping: Dict[str, str]) -> Dict[str, Any]:
+
+def _parse_transform_item(transform_config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Maps options from user-friendly keys to internal option keys.
+    Parse a single transform item from the nested 'transforms' list.
     
-    Converts keys from the Django-style format to the format expected by processor functions.
+    Converts the user-friendly transform configuration to the internal processor format.
     
     Args:
-        options: Dictionary of user-provided options
-        options_mapping: Mapping from user-friendly keys to internal keys
+        transform_config: Dictionary with transform configuration including 'type' field
         
     Returns:
-        Dictionary with mapped option keys
+        Standard processor configuration dictionary
+        
+    Raises:
+        ValueError: If transform type is unknown
     """
-    mapped_options = {}
+    transform_type = transform_config.get("type")
+    if not transform_type:
+        raise ValueError("Transform item must have a 'type' field")
     
-    for option_key, option_value in options.items():
-        mapped_key = options_mapping.get(option_key, option_key)
-        mapped_options[mapped_key] = option_value
-                
-    return mapped_options
+    # Map transform types to processor names
+    if transform_type == "set_coordinates":
+        coord_type = transform_config.get("coord_type", "permno")
+        if coord_type == "permno":
+            return {"proc": "set_permno", "options": {}}
+        elif coord_type == "permco":
+            return {"proc": "set_permco", "options": {}}
+        else:
+            raise ValueError(f"Unknown coord_type: {coord_type}")
+    elif transform_type == "fix_market_equity":
+        return {"proc": "fix_mke", "options": {}}
+    elif transform_type == "preferred_stock":
+        return {"proc": "ps", "options": {}}
+    else:
+        raise ValueError(f"Unknown transform type: {transform_type}")
+
 
 def parse_processors_config(processors_dict: ProcessorsDictConfig) -> ProcessorsList:
     """
     Parse a Django-style processors dictionary into the standard format.
     
     Converts the user-friendly configuration to the internal processors format.
+    Supports both flat shortcut keys and nested 'transforms' structure.
+    
+    NOTE: 'merges' are no longer handled here. External table merging now happens
+    at the DataFrame level before xarray conversion. See GenericWRDSDataLoader.
     
     Examples:
         >>> # Simple processor with no options
         >>> parse_processors_config({"set_permno_coord": True})
         [{"proc": "set_permno", "options": {}}]
         
-        >>> # Processor with options
+        >>> # Nested transforms structure
         >>> parse_processors_config({
-        ...     "merge_table": {
-        ...         "source": "msenames",
-        ...         "axis": "asset",
-        ...         "column": "comnam"
-        ...     }
-        ... })
-        [{"proc": "merge_2d_table", "options": {"external_ds": "msenames", "ax1": "asset", "ax2": "comnam"}}]
-        
-        >>> # Multiple processors
-        >>> parse_processors_config({
-        ...     "set_permno_coord": True,
-        ...     "fix_market_equity": True
-        ... })
-        [{"proc": "set_permno", "options": {}}, {"proc": "fix_mke", "options": {}}]
-        
-        >>> # List of configurations for the same processor
-        >>> parse_processors_config({
-        ...     "merge_table": [
-        ...         {"source": "msenames", "axis": "asset", "column": "comnam"},
-        ...         {"source": "msenames", "axis": "asset", "column": "exchcd"}
+        ...     "transforms": [
+        ...         {"type": "set_coordinates", "coord_type": "permno"},
+        ...         {"type": "fix_market_equity"}
         ...     ]
         ... })
         [
-            {"proc": "merge_2d_table", "options": {"external_ds": "msenames", "ax1": "asset", "ax2": "comnam"}},
-            {"proc": "merge_2d_table", "options": {"external_ds": "msenames", "ax1": "asset", "ax2": "exchcd"}}
+            {"proc": "set_permno", "options": {}},
+            {"proc": "fix_mke", "options": {}}
         ]
     
     Args:
@@ -213,12 +177,22 @@ def parse_processors_config(processors_dict: ProcessorsDictConfig) -> Processors
     processors_list = []
     
     for key, value in processors_dict.items():
+        # Handle nested 'transforms' list
+        if key == "transforms":
+            if not isinstance(value, list):
+                raise ValueError("'transforms' must be a list of transform configurations")
+            for transform_config in value:
+                if not isinstance(transform_config, dict):
+                    raise ValueError("Each transform item must be a dictionary")
+                processors_list.append(_parse_transform_item(transform_config))
+            continue
+        
+        # Handle standard shortcuts
         if key not in PROCESSOR_SHORTCUTS:
             raise ValueError(f"Unknown processor shortcut: {key}")
         
         shortcut = PROCESSOR_SHORTCUTS[key]
         proc_name = shortcut["proc"]
-        options_mapping = shortcut["options_mapping"]
         
         # Handle simple flag case (e.g., "set_permno_coord": True)
         if value is True:
@@ -226,28 +200,18 @@ def parse_processors_config(processors_dict: ProcessorsDictConfig) -> Processors
                 "proc": proc_name,
                 "options": {}
             })
-        # Handle list of configurations for the same processor
-        elif isinstance(value, list):
-            for config in value:
-                if not isinstance(config, dict):
-                    raise ValueError(f"Each item in the processor list for {key} must be a dictionary")
-                mapped_options = _map_options(config, options_mapping)
-                processors_list.append({
-                    "proc": proc_name,
-                    "options": mapped_options
-                })
-        # Handle dictionary of options
+        # Handle dictionary of options (currently none of our processors need options)
         elif isinstance(value, dict):
-            mapped_options = _map_options(value, options_mapping)
             processors_list.append({
                 "proc": proc_name,
-                "options": mapped_options
+                "options": value
             })
         else:
             raise ValueError(f"Invalid value for processor {key}: {value}. "
-                           f"Expected True, a dictionary of options, or a list of option dictionaries.")
+                           f"Expected True or a dictionary of options.")
     
     return processors_list
+
 
 def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, ProcessorsDictConfig]) -> Union[xr.Dataset, List]:
     """
@@ -297,37 +261,18 @@ def apply_processors(ds: xr.Dataset, processors: Union[ProcessorsList, Processor
     else:
         processors_list = processors
     
-    print(f"DEBUG: Applying processors: {processors_list}")
-    # quit()
     for processor_config in processors_list:
         proc_name = processor_config.get("proc")
         options = processor_config.get("options", {})
                 
         if not proc_name:
             raise ValueError("Processor configuration must include 'proc' key")
-        
-        # If an external source is specified, load the external dataset.
-        if "src" in options and isinstance(options["src"], str):
-            external_identifier = options.get("identifier")
-            if not external_identifier:
-                raise ValueError("Postprocessor requires an 'identifier' for external source.")
-            external_rename = options.get("rename")
-            options["external_ds"] = Loader.load_external_proc_file(
-                    options["src"],
-                    external_identifier,
-                    external_rename
-            )
             
         processor_func = post_processor.get(proc_name)
         if not processor_func:
             raise ValueError(f"Unknown processor: {proc_name}")
         
         result = processor_func(result, options)
-        
-        # Remove the external_ds from options to avoid caching issues.
-        if "external_ds" in options:
-            del options["external_ds"]
-        
         applied_postprocessors.append(processor_config)
         
     return result, applied_postprocessors

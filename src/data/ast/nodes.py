@@ -337,7 +337,7 @@ class Literal(Node):
         Returns:
             The literal value as a JAX array
         """
-        return jnp.array(self.value)
+        return jnp.array(self.value, dtype=jnp.float64)
     
     def get_variables(self) -> Set[str]:
         """
@@ -519,20 +519,6 @@ class DataVariable(Node):
         # Create a copy to avoid modifying the original DataArray in the dataset
         data_array = data_array.copy()
         data_array.attrs['_parent_dataset'] = dataset
-        
-        # TEMPORARY FIX: Update to ensure mask and mask_indices are accessible in the context
-        # for this specific DataArray. Downstream functions (like rolling ops)
-        # currently expect these in the main context.
-        # Use actual_key_in_dataset for mask and indices keys for uniqueness.
-        mask_key = f"_mask_{actual_key_in_dataset}"
-        indices_key = f"_indices_{actual_key_in_dataset}"
-        
-        # Only add if mask/indices exist in the parent dataset and aren't already in context
-        # This avoids redundant additions if the same $variable is evaluated multiple times
-        if 'mask' in dataset.coords and mask_key not in context:
-            context[mask_key] = jnp.asarray(dataset.coords['mask'].values) # Add mask to context
-        if 'mask_indices' in dataset.coords and indices_key not in context:
-            context[indices_key] = jnp.asarray(dataset.coords['mask_indices'].values) # Add indices to context
         
         return data_array
     
