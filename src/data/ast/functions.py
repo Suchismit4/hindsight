@@ -55,6 +55,23 @@ def _dispatch_rolling(fn, data, *, window, func_name, **reduce_kwargs):
     raise TypeError(f"Unsupported data type for {func_name}: {type(data)}")
 
 
+def _dispatch_cross_sectional(fn, data, *, func_name, **kwargs):
+    """Dispatch a cross-sectional operation over Dataset or DataArray.
+
+    DataArray: calls fn(data, **kwargs) directly.
+    Dataset: applies fn to each numeric variable that has an 'asset' dim.
+    """
+    if isinstance(data, xr.DataArray):
+        return fn(data, **kwargs)
+    if isinstance(data, xr.Dataset):
+        result_vars = {}
+        for var_name, da in data.data_vars.items():
+            if np.issubdtype(da.dtype, np.number) and 'asset' in da.dims:
+                result_vars[var_name] = fn(da, **kwargs)
+        return xr.Dataset(result_vars, coords=data.coords)
+    raise TypeError(f"Unsupported data type for {func_name}: {type(data)}")
+
+
 # Type variables for better type hinting
 F = TypeVar('F', bound=Callable[..., Any])
 T = TypeVar('T')
@@ -69,6 +86,7 @@ _FUNCTION_CATEGORIES: Dict[str, List[str]] = {
     "financial": [],
     "temporal": [],
     "conditional": [],
+    "cross_sectional": [],
     "miscellaneous": []
 }
 
@@ -979,6 +997,254 @@ def rolling_sum(data, window):
     """
     return _dispatch_rolling(core_sum_func, data, window=window, func_name='rolling_sum')
 
+# ---------------------------------------------------------------------------
+# Cross-sectional operations
+# These operate across the *asset* dimension at each time slice.
+# None of them are JAX-compatible; they rely on numpy/xarray internally.
+# ---------------------------------------------------------------------------
+
+def _cs_rank_1d(values: np.ndarray) -> np.ndarray:
+    """Percentile rank one time-slice (1-D numpy array) across assets.
+
+    NaN assets receive NaN rank. Requires at least 2 valid values to rank;
+    if fewer, all assets get NaN.
+    """
+    result = np.full_like(values, np.nan, dtype=np.float64)
+    valid = ~np.isnan(values)
+    n = int(valid.sum())
+    if n < 2:
+        return result
+    # argsort of argsort gives rank (0-based); normalise to [0, 1]
+    idx = np.where(valid)[0]
+    sorted_ranks = np.argsort(np.argsort(values[idx]))
+    result[idx] = sorted_ranks.astype(np.float64) / (n - 1)
+    return result
+
+
+@register_function(category="cross_sectional")
+def cs_rank(data: xr.DataArray) -> xr.DataArray:
+    """Cross-sectional percentile rank across the asset dimension.
+
+    At each time slice all assets are ranked from 0.0 (lowest) to 1.0
+    (highest). Assets with NaN signal receive NaN rank and are excluded
+    from rank computation of the remaining assets.
+
+    Args:
+        data: DataArray with an 'asset' dimension.
+
+    Returns:
+        DataArray of same shape with percentile ranks in [0, 1].
+
+    NaN: NaN inputs produce NaN outputs; no silent zeroing.
+    JAX: No – uses numpy argsort internally.
+    """
+    if isinstance(data, xr.Dataset):
+        return _dispatch_cross_sectional(cs_rank, data, func_name='cs_rank')
+    if not isinstance(data, xr.DataArray):
+        raise TypeError(f"cs_rank expects xr.DataArray, got {type(data)}")
+    return xr.apply_ufunc(
+        _cs_rank_1d,
+        data,
+        input_core_dims=[['asset']],
+        output_core_dims=[['asset']],
+        vectorize=True,
+        dask='parallelized',
+        output_dtypes=[np.float64],
+    )
+
+
+@register_function(category="cross_sectional")
+def cs_quantile(data: xr.DataArray, q: float) -> xr.DataArray:
+    """Compute the q-th quantile across the asset dimension at each time slice.
+
+    NaN values are ignored (skipna). The result has no 'asset' dimension –
+    it is a scalar per time step. Use with assign_bucket or where to bring
+    it back to asset-level comparisons (xarray broadcasting handles this).
+
+    Args:
+        data: DataArray with an 'asset' dimension.
+        q:    Quantile in [0, 1].
+
+    Returns:
+        DataArray without the 'asset' dimension.
+
+    NaN: skipna=True; all-NaN slices return NaN.
+    JAX: No.
+    """
+    if isinstance(data, xr.Dataset):
+        raise TypeError("cs_quantile requires a DataArray, not a Dataset")
+    if not isinstance(data, xr.DataArray):
+        raise TypeError(f"cs_quantile expects xr.DataArray, got {type(data)}")
+    if not isinstance(q, (int, float)):
+        raise TypeError(f"cs_quantile: q must be a scalar float, got {type(q)}")
+    return data.quantile(float(q), dim='asset', skipna=True).drop_vars('quantile', errors='ignore')
+
+
+@register_function(category="cross_sectional")
+def cs_demean(data: xr.DataArray) -> xr.DataArray:
+    """Subtract the cross-sectional mean from each asset at each time slice.
+
+    Args:
+        data: DataArray with an 'asset' dimension.
+
+    Returns:
+        DataArray of same shape, demeaned across assets (skipna mean).
+
+    NaN: mean computed skipna; NaN assets remain NaN after demeaning.
+    JAX: No.
+    """
+    def _demean(da: xr.DataArray) -> xr.DataArray:
+        return da - da.mean(dim='asset', skipna=True)
+
+    return _dispatch_cross_sectional(_demean, data, func_name='cs_demean')
+
+
+# ---------------------------------------------------------------------------
+# Comparison helpers & conditional
+# These return boolean-like DataArrays for use inside `where`.
+# ---------------------------------------------------------------------------
+
+@register_function(category="conditional")
+def gt(a, b) -> xr.DataArray:
+    """Element-wise greater-than comparison (a > b).
+
+    NaN compared to anything returns False (numpy/xarray default).
+    """
+    return a > b
+
+
+@register_function(category="conditional")
+def lt(a, b) -> xr.DataArray:
+    """Element-wise less-than comparison (a < b)."""
+    return a < b
+
+
+@register_function(category="conditional")
+def ge(a, b) -> xr.DataArray:
+    """Element-wise greater-than-or-equal comparison (a >= b)."""
+    return a >= b
+
+
+@register_function(category="conditional")
+def le(a, b) -> xr.DataArray:
+    """Element-wise less-than-or-equal comparison (a <= b)."""
+    return a <= b
+
+
+@register_function(category="conditional")
+def eq(a, b) -> xr.DataArray:
+    """Element-wise equality comparison (a == b).
+
+    Note: use for integer-like comparisons (e.g. exchcd == 1). Float equality
+    is unreliable for computed values.
+    """
+    return a == b
+
+
+@register_function(category="conditional")
+def nan_const() -> float:
+    """Return NaN as a scalar constant for use in formula expressions.
+
+    Useful with `where`: ``where(gt($x, 0), $x, nan_const())``.
+    """
+    return np.nan
+
+
+@register_function(category="conditional")
+def where(condition, true_val, false_val):
+    """Element-wise conditional selection.
+
+    Returns ``true_val`` where ``condition`` is truthy, ``false_val``
+    elsewhere. Wraps ``xr.where`` with full broadcasting support.
+
+    Args:
+        condition:  Boolean-like DataArray (e.g. result of gt/lt/eq).
+        true_val:   DataArray or scalar used where condition is True.
+        false_val:  DataArray or scalar used where condition is False.
+
+    Returns:
+        DataArray with selected values.
+
+    NaN: NaN in condition treated as False by xr.where.
+    JAX: No.
+    """
+    return xr.where(condition, true_val, false_val)
+
+
+# ---------------------------------------------------------------------------
+# Bucket assignment
+# ---------------------------------------------------------------------------
+
+@register_function(category="cross_sectional")
+def assign_bucket(data: xr.DataArray, bp1, bp2=None, bp3=None) -> xr.DataArray:
+    """Assign each asset to a bin based on pre-computed breakpoint values.
+
+    Each breakpoint is a threshold (scalar or DataArray without 'asset' dim).
+    Assets are assigned to bin 0 if below all breakpoints, bin 1 if above
+    the first breakpoint, bin 2 if above the second, etc.
+
+    Supports 1–3 breakpoints (2–4 bins). For Fama-French:
+    - Size (2-bin):  ``assign_bucket($me, cs_quantile($me_nyse, 0.5))``
+    - B/M  (3-bin):  ``assign_bucket($bm, cs_quantile($bm_nyse, 0.3),
+                                         cs_quantile($bm_nyse, 0.7))``
+
+    Breakpoints from ``cs_quantile`` have no 'asset' dim; xarray broadcasts
+    them across assets automatically.
+
+    Args:
+        data: DataArray with an 'asset' dimension.
+        bp1:  First breakpoint (scalar or DataArray without 'asset' dim).
+        bp2:  Optional second breakpoint.
+        bp3:  Optional third breakpoint.
+
+    Returns:
+        DataArray of same shape with integer bin labels (float64 dtype to
+        accommodate NaN). NaN data → NaN bucket.
+
+    NaN: NaN data produces NaN bucket; no silent zeroing.
+    JAX: No.
+    """
+    if not isinstance(data, xr.DataArray):
+        raise TypeError(f"assign_bucket expects xr.DataArray, got {type(data)}")
+
+    breakpoints = [bp1]
+    if bp2 is not None:
+        breakpoints.append(bp2)
+    if bp3 is not None:
+        breakpoints.append(bp3)
+
+    # Start with all-zero bucket counter
+    result = xr.zeros_like(data, dtype=np.float64)
+    for bp in breakpoints:
+        result = result + xr.where(data > bp, 1.0, 0.0)
+
+    # Propagate NaN from input
+    return xr.where(data.isnull(), np.nan, result)
+
+
+@register_function(category="cross_sectional", description="Month coordinate as DataArray")
+def month_coord(data):
+    """Return the month coordinate broadcast to the shape of data.
+
+    Useful for calendar masks inside formulas, for example:
+        where(eq(month_coord($me), 6), $me, nan_const())
+    """
+    if isinstance(data, xr.Dataset):
+        for var_name, da in data.data_vars.items():
+            if np.issubdtype(da.dtype, np.number):
+                data = da
+                break
+        else:
+            raise ValueError("month_coord requires a dataset with at least one numeric variable")
+
+    if not isinstance(data, xr.DataArray):
+        raise TypeError(f"month_coord expects xr.Dataset or xr.DataArray, got {type(data)}")
+    if "month" not in data.coords:
+        raise ValueError("month_coord requires a 'month' coordinate")
+
+    return data.coords["month"] * xr.ones_like(data)
+
+
 def register_built_in_functions():
     """Register built-in functions for common operations."""
     # Most functions are registered via decorators above,
@@ -986,4 +1252,4 @@ def register_built_in_functions():
     pass
 
 # Register built-in functions when the module is imported
-register_built_in_functions() 
+register_built_in_functions()

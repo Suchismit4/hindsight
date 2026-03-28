@@ -302,15 +302,22 @@ class PerAssetFFill(Processor):
             k for k, v in ds.data_vars.items() if np.issubdtype(v.dtype, np.number)
         ]
         time_dims = self._time_dims(ds)
+        if not time_dims:
+            return ds.copy()
 
         out = ds.copy()
         for var in vars_to_use:
             if var not in out:
                 continue
             values = out[var]
-            for dim in time_dims:
-                values = values.ffill(dim=dim)
-            out[var] = values
+            stack_dims = tuple(dim for dim in time_dims if dim in values.dims)
+            if not stack_dims:
+                continue
+
+            stacked = values.stack(time_index=stack_dims)
+            other_dims = [dim for dim in stacked.dims if dim != "time_index"]
+            filled = stacked.transpose("time_index", *other_dims).ffill(dim="time_index")
+            out[var] = filled.unstack("time_index").transpose(*values.dims)
         return out
 
     @staticmethod
@@ -484,6 +491,7 @@ class CrossSectionalSort(Processor):
     name: str = "sort"
     scope: Optional[str] = None
     labels: Optional[List[Any]] = None
+    quantiles: Optional[List[float]] = None
 
     def fit(self, ds: xr.Dataset) -> None:
         """Stateless processor."""
@@ -531,10 +539,15 @@ class CrossSectionalSort(Processor):
             calc_data = signal_data[calc_mask]
             
             # Calculate quantiles
-            # We use linspace to get n_bins+1 edges from 0 to 1
-            # e.g., for 2 bins: [0, 0.5, 1.0]
-            quantiles = np.linspace(0, 1, self.n_bins + 1)
-            breakpoints = np.nanquantile(calc_data, quantiles)
+            if self.quantiles is not None:
+                # Custom percentile list: [0.3, 0.7] → interior breakpoints only
+                interior = np.array(sorted(self.quantiles), dtype=np.float64)
+                q_edges = np.concatenate([[0.0], interior, [1.0]])
+                n_effective_bins = len(interior) + 1
+            else:
+                q_edges = np.linspace(0, 1, self.n_bins + 1)
+                n_effective_bins = self.n_bins
+            breakpoints = np.nanquantile(calc_data, q_edges)
             
             # Handle edge case where all values are the same or breakpoints are not unique
             # For standard factor construction, we usually want unique bins.
@@ -564,8 +577,8 @@ class CrossSectionalSort(Processor):
             # Digitize
             bins = np.digitize(target_data, breakpoints) - 1
             
-            # Clip to ensure range 0..n_bins-1 (handle precision issues)
-            bins = np.clip(bins, 0, self.n_bins - 1)
+            # Clip to ensure range 0..n_effective_bins-1 (handle precision issues)
+            bins = np.clip(bins, 0, n_effective_bins - 1)
             
             # Assign back to result
             result[valid_mask] = bins
@@ -864,5 +877,70 @@ class PortfolioReturns(Processor):
         port_ret.name = out_name
         
         ds[out_name] = port_ret
-        
+
+        return ds
+
+
+@dataclass
+class FactorSpread(Processor):
+    """Compute long-short factor spreads from a portfolio return array.
+
+    For each named factor, selects the long and short legs from the portfolio
+    return DataArray using dimension coordinate selectors, optionally averages
+    over a cross-dimension, then returns long - short.
+
+    Config example (YAML)::
+
+        - type: "factor_spread"
+          source: "port_ret_me_port_beme_port"
+          factors:
+            SMB:
+              long: {me_port_dim: 0}
+              short: {me_port_dim: 1}
+              average_over: "beme_port_dim"
+            HML:
+              long: {beme_port_dim: 2}
+              short: {beme_port_dim: 0}
+              average_over: "me_port_dim"
+
+    The ``source`` variable must already exist in the dataset (produced by a
+    ``PortfolioReturns`` processor with ``_dim``-renamed group dimensions).
+
+    Output: adds one variable per factor (e.g. ``ds['SMB']``, ``ds['HML']``)
+    with only time dimensions remaining — no asset or portfolio dimensions.
+    """
+
+    source: str = ""
+    factors: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    name: str = "factor_spread"
+
+    def fit(self, ds: xr.Dataset) -> None:
+        return None
+
+    def transform(self, ds: xr.Dataset, state=None) -> xr.Dataset:
+        if self.source not in ds:
+            raise KeyError(
+                f"FactorSpread: source variable '{self.source}' not found in dataset. "
+                f"Available variables: {list(ds.data_vars)}"
+            )
+
+        port_ret = ds[self.source]
+
+        for factor_name, factor_cfg in self.factors.items():
+            long_sel = factor_cfg['long']
+            short_sel = factor_cfg['short']
+            avg_over = factor_cfg.get('average_over')
+
+            long_leg = port_ret.sel(long_sel)
+            short_leg = port_ret.sel(short_sel)
+
+            if avg_over is not None:
+                dims = [avg_over] if isinstance(avg_over, str) else list(avg_over)
+                long_leg = long_leg.mean(dim=dims, skipna=True)
+                short_leg = short_leg.mean(dim=dims, skipna=True)
+
+            result = long_leg - short_leg
+            result.name = factor_name
+            ds[factor_name] = result
+
         return ds

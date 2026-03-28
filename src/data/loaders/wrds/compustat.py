@@ -32,7 +32,7 @@ class CompustatDataFetcher(GenericWRDSDataLoader):
         Determine which Compustat file to load (annual vs. quarterly) 
         based on user-supplied frequency, then call the generic loader.
         """
-        user_freq_str = str(config.get('frequency', 'Y')).upper()
+        user_freq_str = str(config.get('frequency', config.get('freq', 'Y'))).upper()
         
         # Pick from the map or default to annual
         filename, freq_enum = self.COMP_FREQUENCY_MAP.get(

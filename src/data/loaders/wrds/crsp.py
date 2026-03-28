@@ -33,7 +33,7 @@ class CRSPDataFetcher(GenericWRDSDataLoader):
         Adjust LOCAL_SRC depending on the requested frequency, call the generic loader,
         and then attach company names from the separate msenames table as a new DataArray.
         """
-        user_freq_str = str(config.get('freq', 'D')).upper()
+        user_freq_str = str(config.get('freq', config.get('frequency', 'D'))).upper()
         
         # Find the correct file and frequency; default to daily if not found.
         filename, freq_enum = self.CRSP_FREQUENCY_MAP.get(

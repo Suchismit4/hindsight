@@ -12,6 +12,9 @@ from src.pipeline.data_handler.processors import (
     CSZScore,
     PerAssetFFill,
     FormulaEval,
+    CrossSectionalSort,
+    PortfolioReturns,
+    FactorSpread,
 )
 
 
@@ -39,6 +42,12 @@ class ProcessorRegistry:
         'cs_zscore': CSZScore,
         'per_asset_ffill': PerAssetFFill,
         'formula_eval': FormulaEval,
+        'cross_sectional_sort': CrossSectionalSort,
+        'portfolio_returns': PortfolioReturns,
+        'factor_spread': FactorSpread,
+        # Short aliases used in ff3_model.yaml
+        'sort': CrossSectionalSort,
+        'port_ret': PortfolioReturns,
     }
     
     @classmethod

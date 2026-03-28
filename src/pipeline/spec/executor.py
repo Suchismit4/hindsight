@@ -512,26 +512,59 @@ class PipelineExecutor:
         Returns:
             Dataset with computed formula results
         """
-        # Prepare data for JIT
+        from src.data.ast.parser import evaluate_formula
+
         data_jit, recover = prepare_for_jit(data)
-        
-        # Build context
-        context = {
-            '_dataset': data_jit,
-            'price': 'close',  # Default mapping
-            **get_function_context()
-        }
-        
-        # Evaluate formulas
-        result = self.formula_manager.evaluate_bulk(
-            formulas,
-            context,
-            validate_inputs=True,
-            jit_compile=True
-        )
-        
-        # Restore from JIT
-        return restore_from_jit(result, recover)
+        working_ds = data_jit.copy()
+        output_ds = xr.Dataset(coords=data_jit.coords)
+
+        for formula_name, config_list in formulas.items():
+            if not config_list:
+                config_list = [{}]
+
+            for config_idx, raw_config in enumerate(config_list):
+                config = dict(raw_config)
+                expression = config.pop("expression", None)
+
+                if expression is None:
+                    named_result = self.formula_manager.evaluate_bulk(
+                        {formula_name: [config]},
+                        {
+                            "_dataset": working_ds,
+                            "price": "close",
+                            **get_function_context(),
+                        },
+                        validate_inputs=True,
+                        jit_compile=True,
+                    )
+                    for var_name, da in named_result.data_vars.items():
+                        output_ds[var_name] = da
+                        working_ds[var_name] = da
+                    continue
+
+                result_name = formula_name if len(config_list) == 1 else f"{formula_name}_{config_idx}"
+                formula_context = {
+                    "_dataset": working_ds,
+                    "price": "close",
+                    **get_function_context(),
+                    **{var_name: working_ds[var_name] for var_name in working_ds.data_vars},
+                    **config,
+                }
+
+                result, _ = evaluate_formula(expression, formula_context, formula_name=result_name)
+                if isinstance(result, xr.DataArray):
+                    result.name = result_name
+                    output_ds[result_name] = result
+                    working_ds[result_name] = result
+                elif isinstance(result, xr.Dataset):
+                    for var_name, da in result.data_vars.items():
+                        prefixed_name = f"{result_name}_{var_name}"
+                        output_ds[prefixed_name] = da
+                        working_ds[prefixed_name] = da
+                else:
+                    output_ds[result_name] = xr.DataArray(result, name=result_name)
+
+        return restore_from_jit(output_ds, recover)
     
     def _execute_preprocessing_stage(
         self,
@@ -639,10 +672,11 @@ class PipelineExecutor:
         handler = DataHandler(base=data, config=handler_config)
         handler.build()
         
-        # Get the learn view (applies shared + learn processors)
-        # This is what we want for model training - data with all preprocessing applied
+        # If the spec only defines infer processors, surface the infer view so
+        # preprocessing-only pipelines can return their final transformed dataset.
         from src.pipeline.data_handler import View
-        preprocessed_data = handler.view(View.LEARN)
+        view = View.INFER if infer_processors and not learn_processors else View.LEARN
+        preprocessed_data = handler.view(view)
         
         print(f"  Preprocessing complete")
         print(f"  Output variables: {list(preprocessed_data.data_vars)[:10]}...")  # Show first 10
