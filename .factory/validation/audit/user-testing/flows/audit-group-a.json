@@ -1,0 +1,67 @@
+{
+  "groupId": "audit-group-a",
+  "milestone": "audit",
+  "surface": "shell",
+  "assertions": [
+    {
+      "id": "VAL-AUDIT-001",
+      "status": "pass",
+      "reason": ".agent/audit/STRUCTURAL_AUDIT.md exists and has non-zero size.",
+      "evidence": [
+        {
+          "command": "ls -la /home/ubuntu/projects/hindsight/.agent/audit/STRUCTURAL_AUDIT.md",
+          "observation": "File exists with size 10569 bytes."
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-002",
+      "status": "fail",
+      "reason": "STRUCTURAL_AUDIT.md root classification is incomplete/invalid: .git is unclassified, and categories 'PRODUCTION (mixed)' and 'mixed' are outside the allowed set.",
+      "evidence": [
+        {
+          "command": "python3 (classification check script against /home/ubuntu/projects/hindsight/.agent/audit/STRUCTURAL_AUDIT.md and repo root)",
+          "observation": "missing_root_items=['.git']; invalid_categories={'.github': 'PRODUCTION (mixed)', 'dev': 'mixed'}."
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-003",
+      "status": "pass",
+      "reason": ".agent/audit/REORG_PLAN.md exists and has non-zero size.",
+      "evidence": [
+        {
+          "command": "ls -la /home/ubuntu/projects/hindsight/.agent/audit/REORG_PLAN.md",
+          "observation": "File exists with size 14459 bytes."
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-004",
+      "status": "pass",
+      "reason": "All FROM paths in REORG_PLAN.md move operations resolve to existing files/directories.",
+      "evidence": [
+        {
+          "command": "python3 (move FROM path validation script against /home/ubuntu/projects/hindsight/.agent/audit/REORG_PLAN.md)",
+          "observation": "move_count=27; missing_from_count=0; missing_from=[]."
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-005",
+      "status": "pass",
+      "reason": "No TO destination in REORG_PLAN.md move operations collides with an unrelated existing file.",
+      "evidence": [
+        {
+          "command": "python3 (move TO collision validation script against /home/ubuntu/projects/hindsight/.agent/audit/REORG_PLAN.md)",
+          "observation": "to_collision_count=0; collisions=[]."
+        }
+      ]
+    }
+  ],
+  "toolsUsed": [
+    "shell"
+  ],
+  "frictions": [],
+  "blockers": []
+}

@@ -1,0 +1,56 @@
+{
+  "groupId": "audit-group-b",
+  "milestone": "audit",
+  "surface": "shell",
+  "assertions": [
+    {
+      "id": "VAL-AUDIT-006",
+      "status": "pass",
+      "reason": "No src/**/*.py paths were found as FROM entries in numbered move operations.",
+      "evidence": [
+        {
+          "command": "python3 (parse numbered move rows in .agent/audit/REORG_PLAN.md and filter FROM paths matching src/*.py)",
+          "observation": "matches: none"
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-007",
+      "status": "pass",
+      "reason": "No examples/**/*.yaml paths were found in the Deletions section of REORG_PLAN.",
+      "evidence": [
+        {
+          "command": "python3 (extract '## 2. Deletions' block from .agent/audit/REORG_PLAN.md and filter paths matching examples/*.yaml)",
+          "observation": "matches: none"
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-008",
+      "status": "pass",
+      "reason": "REORG_PLAN contains a dedicated .gitignore section heading.",
+      "evidence": [
+        {
+          "command": "grep -n '^## 4\\. \\.gitignore Section$' /home/ubuntu/projects/hindsight/.agent/audit/REORG_PLAN.md",
+          "observation": "189:## 4. .gitignore Section"
+        }
+      ]
+    },
+    {
+      "id": "VAL-AUDIT-009",
+      "status": "pass",
+      "reason": "REORG_PLAN includes a final folder structure section and tree markers.",
+      "evidence": [
+        {
+          "command": "python3 (check for '## 5. Final Folder Structure' and tree markers like '\u251c\u2500\u2500' in .agent/audit/REORG_PLAN.md)",
+          "observation": "has_heading: True; has_tree_markers: True"
+        }
+      ]
+    }
+  ],
+  "toolsUsed": [
+    "shell"
+  ],
+  "frictions": [],
+  "blockers": []
+}

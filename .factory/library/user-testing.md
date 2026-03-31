@@ -31,3 +31,11 @@ There is no web UI, no TUI, no API server. All validation is done via shell comm
 - Backtester module tests may have issues — not blocking
 - 3 pre-existing flake8 errors (F821 x2 in backtester/core.py, F824 x1 in ast/functions.py)
 - Various DeprecationWarning and FutureWarning in test output — cosmetic, not failures
+
+## Flow Validator Guidance: shell commands
+
+- Scope: validate only assigned assertion IDs and only with repository-local shell checks.
+- Shared-state rule: do not modify source files, git history, or service configuration during assertion checks.
+- Evidence rule: capture exact command output snippets and include them in each flow JSON report.
+- Isolation boundary: stay in `/home/ubuntu/projects/hindsight`, write only to assigned flow report path and evidence folder.
+- Concurrency safety: assertions are read-only filesystem/git checks; parallel runs are allowed if they avoid writing the same report file.
