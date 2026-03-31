@@ -1,0 +1,191 @@
+# Cross-Sectional Formula Definitions
+#
+# Functions used here: cs_rank, cs_quantile, cs_demean, assign_bucket,
+# where, gt, lt, ge, le, eq, nan_const
+#
+# These formulas operate across the asset dimension at each time slice.
+# Breakpoints from cs_quantile lack the asset dim; xarray broadcasts them.
+
+# ============================
+# NYSE / Exchange Masks
+# ============================
+
+is_nyse:
+  description: "Boolean mask: True for NYSE-listed stocks (exchcd == 1)"
+  expression: "eq($exchcd, 1)"
+  return_type: "dataarray"
+  variables:
+    exchcd:
+      type: "dataarray"
+      description: "CRSP exchange code (1=NYSE, 2=AMEX, 3=NASDAQ)"
+  functions:
+    eq:
+      description: "Element-wise equality"
+      args:
+        - {name: "a", type: "dataarray", description: "Left operand"}
+        - {name: "b", type: "number", description: "Right operand"}
+
+is_common_share:
+  description: "Boolean mask: True for common shares (shrcd in {10, 11})"
+  expression: "where(eq($shrcd, 10), 1, where(eq($shrcd, 11), 1, nan_const()))"
+  return_type: "dataarray"
+  variables:
+    shrcd:
+      type: "dataarray"
+      description: "CRSP share code"
+  functions:
+    where:
+      description: "Conditional selection"
+      args:
+        - {name: "condition", type: "dataarray", description: "Boolean mask"}
+        - {name: "true_val", type: "dataarray", description: "Value where True"}
+        - {name: "false_val", type: "dataarray", description: "Value where False"}
+    eq:
+      description: "Element-wise equality"
+
+# ============================
+# Book Equity Cleaning
+# ============================
+
+book_equity_clean:
+  description: "Book equity with non-positive values set to NaN"
+  expression: "where(gt($be_raw, 0), $be_raw, nan_const())"
+  return_type: "dataarray"
+  variables:
+    be_raw:
+      type: "dataarray"
+      description: "Raw book equity (seq + txditc - ps)"
+  functions:
+    where:
+      description: "Conditional selection"
+    gt:
+      description: "Greater-than comparison"
+    nan_const:
+      description: "NaN constant"
+
+# ============================
+# Market Equity Scoping
+# ============================
+
+me_nyse:
+  description: "Market equity masked to NYSE stocks only (NaN for non-NYSE)"
+  expression: "where(eq($exchcd, 1), $me, nan_const())"
+  return_type: "dataarray"
+  variables:
+    me:
+      type: "dataarray"
+      description: "Market equity"
+    exchcd:
+      type: "dataarray"
+      description: "Exchange code"
+  functions:
+    where:
+      description: "Conditional selection"
+    eq:
+      description: "Element-wise equality"
+    nan_const:
+      description: "NaN constant"
+
+# ============================
+# Cross-Sectional Ranks
+# ============================
+
+me_cs_rank:
+  description: "Cross-sectional percentile rank of market equity (0=lowest, 1=highest)"
+  expression: "cs_rank($me)"
+  return_type: "dataarray"
+  variables:
+    me:
+      type: "dataarray"
+      description: "Market equity"
+  functions:
+    cs_rank:
+      description: "Cross-sectional rank across asset dim"
+      args:
+        - {name: "data", type: "dataarray", description: "Input data"}
+
+bm_cs_rank:
+  description: "Cross-sectional percentile rank of book-to-market ratio"
+  expression: "cs_rank($bm)"
+  return_type: "dataarray"
+  variables:
+    bm:
+      type: "dataarray"
+      description: "Book-to-market ratio"
+  functions:
+    cs_rank:
+      description: "Cross-sectional rank across asset dim"
+
+# ============================
+# Fama-French Sorting Buckets
+# ============================
+
+sz_bucket:
+  description: "Size bucket using NYSE median ME breakpoint (0=Small, 1=Big)"
+  expression: "assign_bucket($me, cs_quantile($me_nyse, 0.5))"
+  return_type: "dataarray"
+  variables:
+    me:
+      type: "dataarray"
+      description: "Market equity (all stocks)"
+    me_nyse:
+      type: "dataarray"
+      description: "NYSE-only market equity (NaN for non-NYSE)"
+  functions:
+    assign_bucket:
+      description: "Assign assets to bins given breakpoints"
+      args:
+        - {name: "data", type: "dataarray", description: "Signal values"}
+        - {name: "bp1", type: "dataarray", description: "First breakpoint"}
+    cs_quantile:
+      description: "Cross-sectional quantile value (scalar per time step)"
+      args:
+        - {name: "data", type: "dataarray", description: "Input data"}
+        - {name: "q", type: "number", description: "Quantile in [0, 1]"}
+
+bm_bucket:
+  description: "B/M bucket using NYSE 30th/70th percentile breakpoints (0=Low, 1=Mid, 2=High)"
+  expression: "assign_bucket($bm, cs_quantile($bm_nyse, 0.3), cs_quantile($bm_nyse, 0.7))"
+  return_type: "dataarray"
+  variables:
+    bm:
+      type: "dataarray"
+      description: "Book-to-market ratio (all stocks)"
+    bm_nyse:
+      type: "dataarray"
+      description: "NYSE-only book-to-market (NaN for non-NYSE)"
+  functions:
+    assign_bucket:
+      description: "Assign assets to bins given breakpoints"
+    cs_quantile:
+      description: "Cross-sectional quantile value (scalar per time step)"
+
+# ============================
+# Cross-Sectional Demeaning
+# ============================
+
+ret_cs_demeaned:
+  description: "Cross-sectionally demeaned returns"
+  expression: "cs_demean($ret)"
+  return_type: "dataarray"
+  variables:
+    ret:
+      type: "dataarray"
+      description: "Asset returns"
+  functions:
+    cs_demean:
+      description: "Subtract cross-sectional mean"
+      args:
+        - {name: "data", type: "dataarray", description: "Input data"}
+
+me_cs_demeaned:
+  description: "Cross-sectionally demeaned market equity (log-scale use recommended)"
+  expression: "cs_demean($me)"
+  return_type: "dataarray"
+  variables:
+    me:
+      type: "dataarray"
+      description: "Market equity"
+  functions:
+    cs_demean:
+      description: "Subtract cross-sectional mean"

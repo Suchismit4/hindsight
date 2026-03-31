@@ -1,71 +1,66 @@
-# Ignore the virtual environment
-venv/
-
-# Ignore all .parquet files
-*.parquet
-
-# Ignore all .csv files
-*.csv
-
-**/pycache
-
-# Ignore pyc files
+# === Python ===
+__pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+*.egg
 
-# Ignore zips
+# === Virtual Environments ===
+venv/
+.venv/
+
+# === Data Files ===
+*.parquet
+*.csv
 *.zip
 
-# Ignore .DS_Store
-.DS_Store
-
-# Ignore .env
-.env
-
-# Ignore .config files, .yaml files, .yml files, .log files, .txt files
-*.config
-*.yaml
-*.yml
-*.log
-*.txt
-*.md
-
-# Ignore the folder dev, build, .claude, .vscode
-dev/
-build/
-.claude/
+# === IDE / Editor ===
 .vscode/
+.idea/
 
-# Ignore the folder source  
-source/
+# === OS ===
+.DS_Store
+Thumbs.db
 
-# Ignore anything to do with __pycache__ even nested folders
-__pycache__/
-**__pycache__**
+# === Environment ===
+.env
+.env.*
 
-# Ignore anything to do with .pytest_cache even nested folders
+# === Build Artifacts ===
+build/
+
+# === Caches ===
 .pytest_cache/
-**.pytest_cache**
-
-# Ignore anything to do with .ruff_cache even nested folders
+**/.pytest_cache/
 .ruff_cache/
-**.ruff_cache**
+**/.ruff_cache/
 
-# Ignore anything to do with .ruff_cache even nested folders
-.ruff_cache/
-**.ruff_cache**
+# === Jupyter ===
+*.ipynb
+.ipynb_checkpoints/
 
-# Ignore bat files
-*.bat
+# === Logs ===
+*.log
 
-# toml and claude files
-*.toml
-*.claude
+# === Output Plots ===
+*.png
 
-# Ignore the folder .codex
+# === Dev Scratch ===
+dev/
+source/
+full_docs.md
+full_docs_api.md
+project_paths.txt
+project_structure.txt
+
+# === AI / Agent Directories ===
+.agent/
+.agents/
+.claude/
 .codex/
 
-#.ipynb files
-*.ipynb
-
-# checkpoint file ipynb
-.ipynb_checkpoints/
+# === Mission Infrastructure ===
+.factory/

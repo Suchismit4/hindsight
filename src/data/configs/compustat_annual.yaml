@@ -1,0 +1,43 @@
+data:
+  # Compustat Annual Fundamentals configuration
+  name: "compustat-annual"
+  start_date: "2000-01-01"
+  end_date: "2024-01-01"
+  cache_path: "~/data/cache/"
+  
+  sources:
+    # Compustat Fundamentals Annual
+    compustat_annual:
+      provider: "wrds"
+      dataset: "equity/compustat"
+      frequency: "annual"
+      
+      schema:
+        time_var: "datadate"
+        identifier_var: "gvkey"
+        
+      columns:
+        - "gvkey"
+        - "datadate"
+        - "at"      # Total Assets
+        - "pstkl"   # Preferred Stock Liquidating Value
+        - "txditc"  # Deferred Taxes and Investment Tax Credit
+        - "pstkrv"  # Preferred Stock Redemption Value
+        - "seq"     # Shareholders' Equity
+        - "pstk"    # Preferred Stock
+        - "indfmt"
+        - "datafmt"
+        - "popsrc"
+        - "consol"
+        
+      filters:
+        indfmt: "INDL"
+        datafmt: "STD"
+        popsrc: "D"
+        consol: "C"
+        
+      processors:
+        # Data transformations
+        transforms:
+          - type: "set_coordinates"
+            coord_type: "permno"
