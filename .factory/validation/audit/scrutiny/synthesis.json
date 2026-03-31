@@ -59,5 +59,10 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": null,
+  "orchestratorOverride": {
+    "overridden": true,
+    "reason": "Issues found are cosmetic formatting in intermediate audit artifacts (.git/ not classified, non-canonical category labels). Cleanup workers have explicit instructions in features.json and don't depend on audit doc formatting. All 109 tests pass, lint shows only known pre-existing errors. The audit's primary deliverable (REORG_PLAN.md) is thorough and usable.",
+    "timestamp": "2026-03-31T03:25:00Z"
+  }
 }
