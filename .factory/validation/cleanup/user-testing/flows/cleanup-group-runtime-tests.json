@@ -1,0 +1,65 @@
+{
+  "groupId": "cleanup-group-runtime-tests",
+  "testedAt": "2026-03-31T03:51:45Z",
+  "isolation": {
+    "surface": "shell",
+    "workingDirectory": "/home/ubuntu/projects/hindsight",
+    "policy": "Read-only validation checks only; no source, git history, or service config changes"
+  },
+  "toolsUsed": [
+    "shell"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-TEST-001",
+      "title": "pytest tests/ passes",
+      "status": "pass",
+      "reason": "Pytest completed successfully with 109 passed, 4 skipped, and 0 failed.",
+      "commandEvidence": {
+        "command": "cd /home/ubuntu/projects/hindsight && /home/ubuntu/conda/envs/jax/bin/pytest tests/ -q --color=no",
+        "exitCode": 0,
+        "evidenceFile": "cleanup/cleanup-group-runtime-tests/VAL-TEST-001-and-VAL-CROSS-003-pytest.txt",
+        "outputSnippet": "109 passed, 4 skipped, 398 warnings in 7.80s"
+      }
+    },
+    {
+      "id": "VAL-TEST-002",
+      "title": "Python import check succeeds",
+      "status": "pass",
+      "reason": "Import command exited 0, confirming src remains importable after cleanup.",
+      "commandEvidence": {
+        "command": "cd /home/ubuntu/projects/hindsight && /home/ubuntu/conda/envs/jax/bin/python -c \"import src\"",
+        "exitCode": 0,
+        "evidenceFile": "cleanup/cleanup-group-runtime-tests/VAL-TEST-002-import-src.txt",
+        "outputSnippet": "EXIT_CODE=0"
+      }
+    },
+    {
+      "id": "VAL-TEST-003",
+      "title": "Flake8 shows only pre-existing errors",
+      "status": "pass",
+      "reason": "Flake8 reported only known issues in src/backtester/core.py (F821 x2) and src/data/ast/functions.py (F824 x1), with no new paths.",
+      "commandEvidence": {
+        "command": "cd /home/ubuntu/projects/hindsight && /home/ubuntu/conda/envs/jax/bin/flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics",
+        "exitCode": 1,
+        "evidenceFile": "cleanup/cleanup-group-runtime-tests/VAL-TEST-003-flake8.txt",
+        "outputSnippet": "src/backtester/core.py:436 ... F821; src/backtester/core.py:457 ... F821; src/data/ast/functions.py:186 ... F824; total 3"
+      }
+    },
+    {
+      "id": "VAL-CROSS-003",
+      "title": "Test continuity across reorganization",
+      "status": "pass",
+      "reason": "Pytest from tests/ still reports the baseline continuity signal (109 passed, 4 skipped), indicating no test loss after moves.",
+      "commandEvidence": {
+        "command": "cd /home/ubuntu/projects/hindsight && /home/ubuntu/conda/envs/jax/bin/pytest tests/ -q --color=no",
+        "exitCode": 0,
+        "evidenceFile": "cleanup/cleanup-group-runtime-tests/VAL-TEST-001-and-VAL-CROSS-003-pytest.txt",
+        "outputSnippet": "109 passed, 4 skipped, 398 warnings in 7.80s"
+      }
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Validated 4 assigned runtime assertions via shell commands: 4 passed, 0 failed, 0 blocked."
+}

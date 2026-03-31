@@ -1,0 +1,104 @@
+{
+  "groupId": "cleanup-group-org-core",
+  "testedAt": "2026-03-31T03:48:59Z",
+  "isolation": {
+    "surface": "shell",
+    "repo": "/home/ubuntu/projects/hindsight",
+    "mode": "read-only validation checks only",
+    "missionDir": "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1"
+  },
+  "toolsUsed": [
+    "shell"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-ORG-001",
+      "status": "pass",
+      "reason": "All listed root AI artifacts are absent from repository root and present under .agent/.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-001.txt",
+        "snippets": [
+          "AGENTS.md: root_exists=False agent_exists=True",
+          "Makefile: root_exists=False agent_exists=True",
+          "open_docs.py: root_exists=False agent_exists=True"
+        ]
+      }
+    },
+    {
+      "id": "VAL-ORG-002",
+      "status": "pass",
+      "reason": "All listed dev AI artifacts are absent from dev/ and present under .agent/.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-002.txt",
+        "snippets": [
+          "CURSOR_PROMPT.md: dev_exists=False agent_exists=True",
+          "INC3_PLAN.md: dev_exists=False agent_exists=True",
+          "SESSION_CHANGELOG.md: dev_exists=False agent_exists=True"
+        ]
+      }
+    },
+    {
+      "id": "VAL-ORG-003",
+      "status": "pass",
+      "reason": ".github/copilot-instructions.md is absent and .agent/copilot-instructions.md exists.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-003.txt",
+        "snippets": [
+          ".agent/copilot-instructions.md",
+          "copilot-instructions.md: github_exists=False agent_exists=True"
+        ]
+      }
+    },
+    {
+      "id": "VAL-ORG-004",
+      "status": "pass",
+      "reason": "Root example.py is absent and examples/example.py is present.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-004.txt",
+        "snippets": [
+          "example.py: root_exists=False candidates=['examples/run_pipeline_example.py', 'examples/example.py']"
+        ]
+      }
+    },
+    {
+      "id": "VAL-ORG-005",
+      "status": "pass",
+      "reason": "All required canonical test files are present in tests/.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-005.txt",
+        "snippets": [
+          "test_backtester.py: tests_exists=True",
+          "test_ff3_wrds.py: tests_exists=True",
+          "test_walk_forward.py: tests_exists=True"
+        ]
+      }
+    },
+    {
+      "id": "VAL-ORG-006",
+      "status": "pass",
+      "reason": "tests/conftest.py exists and contains simulated_daily_ds, simulated_monthly_ds, and ohlcv_ds fixtures.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-006.txt",
+        "snippets": [
+          "16:def simulated_daily_ds():",
+          "29:def simulated_monthly_ds():",
+          "42:def ohlcv_ds():"
+        ]
+      }
+    },
+    {
+      "id": "VAL-ORG-007",
+      "status": "pass",
+      "reason": ".agent/audit/CHANGELOG_REORG.md exists and is non-empty.",
+      "commandEvidence": {
+        "evidenceFile": "cleanup/cleanup-group-org-core/VAL-ORG-007.txt",
+        "snippets": [
+          "CHANGELOG_REORG.md exists=True size=3524"
+        ]
+      }
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Validated 7 assigned assertions via shell checks: 7 passed, 0 failed, 0 blocked."
+}

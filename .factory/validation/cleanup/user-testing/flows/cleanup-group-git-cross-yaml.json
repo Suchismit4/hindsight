@@ -1,0 +1,92 @@
+{
+  "groupId": "cleanup-group-git-cross-yaml",
+  "testedAt": "2026-03-31T03:48:48Z",
+  "milestone": "cleanup",
+  "isolation": {
+    "surface": "shell",
+    "repo": "/home/ubuntu/projects/hindsight",
+    "mode": "read-only validation checks only"
+  },
+  "toolsUsed": [
+    "shell",
+    "grep",
+    "git",
+    "python3"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-GIT-014",
+      "status": "pass",
+      "reason": "`.factory/` is present in `.gitignore`.",
+      "commandEvidence": {
+        "commands": [
+          "grep -nF '.factory/' /home/ubuntu/projects/hindsight/.gitignore"
+        ],
+        "evidenceFiles": [
+          "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1/evidence/cleanup/cleanup-group-git-cross-yaml/VAL-GIT-014.txt"
+        ],
+        "outputSnippet": "$ grep -nF '.factory/' /home/ubuntu/projects/hindsight/.gitignore\n66:.factory/"
+      }
+    },
+    {
+      "id": "VAL-GIT-015",
+      "status": "pass",
+      "reason": "Both `.agents/` and `.codex/` are present in `.gitignore`.",
+      "commandEvidence": {
+        "commands": [
+          "grep -nF '.agents/' /home/ubuntu/projects/hindsight/.gitignore",
+          "grep -nF '.codex/' /home/ubuntu/projects/hindsight/.gitignore"
+        ],
+        "evidenceFiles": [
+          "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1/evidence/cleanup/cleanup-group-git-cross-yaml/VAL-GIT-015.txt"
+        ],
+        "outputSnippet": "$ grep -nF '.agents/' /home/ubuntu/projects/hindsight/.gitignore\n61:.agents/\n\n$ grep -nF '.codex/' /home/ubuntu/projects/hindsight/.gitignore\n63:.codex/"
+      }
+    },
+    {
+      "id": "VAL-GIT-016",
+      "status": "pass",
+      "reason": "`.claude/` is present in `.gitignore`.",
+      "commandEvidence": {
+        "commands": [
+          "grep -nF '.claude/' /home/ubuntu/projects/hindsight/.gitignore"
+        ],
+        "evidenceFiles": [
+          "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1/evidence/cleanup/cleanup-group-git-cross-yaml/VAL-GIT-016.txt"
+        ],
+        "outputSnippet": "$ grep -nF '.claude/' /home/ubuntu/projects/hindsight/.gitignore\n62:.claude/"
+      }
+    },
+    {
+      "id": "VAL-CROSS-004",
+      "status": "pass",
+      "reason": "YAML files in `src/data/ast/definitions/` and `src/data/configs/` are tracked by git and present on disk.",
+      "commandEvidence": {
+        "commands": [
+          "git -C /home/ubuntu/projects/hindsight ls-files 'src/data/ast/definitions/*.yaml' 'src/data/configs/*.yaml'",
+          "python3 yaml existence check for src/data/ast/definitions and src/data/configs"
+        ],
+        "evidenceFiles": [
+          "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1/evidence/cleanup/cleanup-group-git-cross-yaml/VAL-CROSS-004.txt"
+        ],
+        "outputSnippet": "$ git -C /home/ubuntu/projects/hindsight ls-files 'src/data/ast/definitions/*.yaml' 'src/data/configs/*.yaml'\nsrc/data/ast/definitions/composite.yaml\nsrc/data/ast/definitions/cross_sectional.yaml\nsrc/data/ast/definitions/marketchars.yaml\nsrc/data/ast/definitions/schema.yaml\nsrc/data/ast/definitions/technical.yaml\nsrc/data/ast/definitions/ts_dependence.yaml\nsrc/data/configs/compustat_annual.yaml\nsrc/data/configs/crypto_standard.yaml\nsrc/data/configs/equity_standard.yaml\n\n$ python3 yaml existence check for src/data/ast/definitions and src/data/configs\nsrc/data/ast/definitions -> 6 yaml files\n  composite.yaml\n  cross_sectional.yaml\n  marketchars.yaml\n  schema.yaml\n  technical.yaml\n  ts_dependence.yaml\nsrc/data/configs -> 3 yaml files\n  compustat_annual.yaml\n  crypto_standard.yaml\n  equity_standard.yaml"
+      }
+    },
+    {
+      "id": "VAL-CROSS-005",
+      "status": "pass",
+      "reason": "All `.yaml` files under `src/` that exist on disk are tracked in git (set comparison matched exactly).",
+      "commandEvidence": {
+        "commands": [
+          "python3 compare all src/**/*.yaml on disk vs git ls-files"
+        ],
+        "evidenceFiles": [
+          "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1/evidence/cleanup/cleanup-group-git-cross-yaml/VAL-CROSS-005.txt"
+        ],
+        "outputSnippet": "$ python3 compare all src/**/*.yaml on disk vs git ls-files\ndisk_count=9\ntracked_count=9\nmissing_from_git_count=0\nextra_tracked_count=0\nMATCH"
+      }
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 5 assigned assertions via read-only shell checks: 5 passed, 0 failed, 0 blocked."
+}

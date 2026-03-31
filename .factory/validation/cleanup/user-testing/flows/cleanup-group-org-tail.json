@@ -1,0 +1,138 @@
+{
+  "groupId": "cleanup-group-org-tail",
+  "testedAt": "2026-03-31T03:49:31.186009+00:00",
+  "isolation": {
+    "surface": "shell",
+    "repo": "/home/ubuntu/projects/hindsight",
+    "mode": "read-only validation checks",
+    "evidenceDir": "/home/suchismit/.factory/missions/5240e94d-adc4-47a5-8a7d-f55a5bca17e1/evidence/cleanup/cleanup-group-org-tail"
+  },
+  "toolsUsed": [
+    "shell"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-ORG-008",
+      "status": "pass",
+      "reason": "Repository root does not contain wrdsfactorexample/.",
+      "commandEvidence": [
+        {
+          "command": "ls -1A /home/ubuntu/projects/hindsight",
+          "exitCode": 0,
+          "outputSnippet": ".agent\n.agents\n.claude\n.codex\n.factory\n.git\n.github\n.gitignore\n.ipynb_checkpoints\n.pytest_cache\n.ruff_cache\n.vscode\nREADME.md\nUntitled.ipynb\n__pycache__\nbuild\nconftest.py\ndev\ndocs\nexamples\nff3_v2.ipynb\nfull_docs.md\nfull_docs_api.md\npipeline_example.log\nprediction_comparison.png\nprediction_comparison_`.png\nprice_and_predictions.png\nprice_and_predictions_`.png\nproject_paths.txt\nproject_structure.txt\npytest.ini\nrequirements.txt\nrun_full.log\nsource\nsrc\ntests"
+        },
+        {
+          "command": "if [ -d /home/ubuntu/projects/hindsight/wrdsfactorexample ]; then echo \"wrdsfactorexample directory: PRESENT\"; else echo \"wrdsfactorexample directory: ABSENT\"; fi",
+          "exitCode": 0,
+          "outputSnippet": "wrdsfactorexample directory: ABSENT"
+        }
+      ],
+      "evidenceFiles": [
+        "cleanup/cleanup-group-org-tail/VAL-ORG-008.txt"
+      ]
+    },
+    {
+      "id": "VAL-ORG-009",
+      "status": "pass",
+      "reason": "git ls-files shows no tracked paths under .ipynb_checkpoints/.",
+      "commandEvidence": [
+        {
+          "command": "OUT=\"$(git -C /home/ubuntu/projects/hindsight ls-files .ipynb_checkpoints/)\"; if [ -z \"$OUT\" ]; then echo \"git ls-files .ipynb_checkpoints/: EMPTY\"; else echo \"$OUT\"; fi",
+          "exitCode": 0,
+          "outputSnippet": "git ls-files .ipynb_checkpoints/: EMPTY"
+        }
+      ],
+      "evidenceFiles": [
+        "cleanup/cleanup-group-org-tail/VAL-ORG-009.txt"
+      ]
+    },
+    {
+      "id": "VAL-ORG-010",
+      "status": "pass",
+      "reason": "Root conftest.py exists and contains sys.path.insert logic.",
+      "commandEvidence": [
+        {
+          "command": "ls -l /home/ubuntu/projects/hindsight/conftest.py",
+          "exitCode": 0,
+          "outputSnippet": "-rw-r--r-- 1 suchismit ubuntu 153 Mar  6 13:38 /home/ubuntu/projects/hindsight/conftest.py"
+        },
+        {
+          "command": "grep -n 'sys\\.path\\.insert' /home/ubuntu/projects/hindsight/conftest.py",
+          "exitCode": 0,
+          "outputSnippet": "5:sys.path.insert(0, os.path.dirname(__file__))"
+        }
+      ],
+      "evidenceFiles": [
+        "cleanup/cleanup-group-org-tail/VAL-ORG-010.txt"
+      ]
+    },
+    {
+      "id": "VAL-TEST-004",
+      "status": "pass",
+      "reason": "pytest.ini reflects moved tests layout and has no dev/archive norecursedirs reference.",
+      "commandEvidence": [
+        {
+          "command": "cat /home/ubuntu/projects/hindsight/pytest.ini",
+          "exitCode": 0,
+          "outputSnippet": "[pytest]\nnorecursedirs = .agent build .git __pycache__ examples dev\nmarkers =\n    wrds: tests that require local WRDS SAS data"
+        },
+        {
+          "command": "if grep -n 'dev/archive' /home/ubuntu/projects/hindsight/pytest.ini; then true; else echo 'dev/archive reference: NOT FOUND'; fi",
+          "exitCode": 0,
+          "outputSnippet": "dev/archive reference: NOT FOUND"
+        }
+      ],
+      "evidenceFiles": [
+        "cleanup/cleanup-group-org-tail/VAL-TEST-004.txt"
+      ]
+    },
+    {
+      "id": "VAL-TEST-005",
+      "status": "pass",
+      "reason": "tests/conftest.py exists and defines simulated_daily_ds, simulated_monthly_ds, and ohlcv_ds fixtures.",
+      "commandEvidence": [
+        {
+          "command": "ls -l /home/ubuntu/projects/hindsight/tests/conftest.py",
+          "exitCode": 0,
+          "outputSnippet": "-rw-r--r-- 1 suchismit ubuntu 2208 Mar  6 13:30 /home/ubuntu/projects/hindsight/tests/conftest.py"
+        },
+        {
+          "command": "grep -n 'simulated_daily_ds' /home/ubuntu/projects/hindsight/tests/conftest.py",
+          "exitCode": 0,
+          "outputSnippet": "16:def simulated_daily_ds():"
+        },
+        {
+          "command": "grep -n 'simulated_monthly_ds' /home/ubuntu/projects/hindsight/tests/conftest.py",
+          "exitCode": 0,
+          "outputSnippet": "29:def simulated_monthly_ds():"
+        },
+        {
+          "command": "grep -n 'ohlcv_ds' /home/ubuntu/projects/hindsight/tests/conftest.py",
+          "exitCode": 0,
+          "outputSnippet": "42:def ohlcv_ds():"
+        }
+      ],
+      "evidenceFiles": [
+        "cleanup/cleanup-group-org-tail/VAL-TEST-005.txt"
+      ]
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "status": "pass",
+      "reason": "All top-level entries specified in REORG_PLAN.md are present in the repository root.",
+      "commandEvidence": [
+        {
+          "command": "Parsed REORG_PLAN.md top-level tree entries and compared with ls -1A repo root",
+          "exitCode": 0,
+          "outputSnippet": "expected=['.github', '.gitignore', 'README.md', 'conftest.py', 'pytest.ini', 'requirements.txt', 'docs', 'examples', 'src', 'tests']\\nmissing=[]"
+        }
+      ],
+      "evidenceFiles": [
+        "cleanup/cleanup-group-org-tail/VAL-CROSS-001.txt"
+      ]
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 6 assigned assertions: 6 passed, 0 failed, 0 blocked."
+}
