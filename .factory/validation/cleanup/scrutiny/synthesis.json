@@ -1,0 +1,56 @@
+{
+  "milestone": "cleanup",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "/home/ubuntu/conda/envs/jax/bin/pytest /home/ubuntu/projects/hindsight/tests/ -v",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "echo \"No typecheck configured for this project\"",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "/home/ubuntu/conda/envs/jax/bin/flake8 /home/ubuntu/projects/hindsight/src/ --count --select=E9,F63,F7,F82 --show-source --statistics",
+      "exitCode": 1,
+      "acceptedKnownIssues": [
+        "src/backtester/core.py F821 execution_timestamp (lines 436, 457)",
+        "src/data/ast/functions.py F824 unused nonlocal (line 186)"
+      ]
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "cleanup-worker skill",
+      "suggestion": "Add an explicit post-.gitignore rewrite step to scan and stage newly unignored required files (especially YAML/config paths) before final validation.",
+      "evidence": "cleanup-file-moves review observed manual discovery/staging of YAML files after ignore rewrite in commit f34decdf387a30a18e7ab7691377971d6304ec51.",
+      "isSystemic": false
+    },
+    {
+      "target": ".factory/services.yaml",
+      "suggestion": "Clarify test command intent by marking `test_dev` as legacy or replacing it with a milestone-aware pre/post cleanup command set to avoid workers choosing stale paths.",
+      "evidence": "Both cleanup reviews flagged command ambiguity around `test` vs `test_dev` after tests were relocated from dev/ to tests/.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md and cleanup-worker skill",
+      "suggestion": "Add a precedence rule for mission-specific policy over generic worker guidance (e.g., handling of `.factory/` tracking) and provide a verification-only path for validation features.",
+      "evidence": "cleanup-gitignore-and-state review documented procedural ambiguity when running a verification-only feature under an execution-oriented skill and conflicting `.factory/` expectations.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
