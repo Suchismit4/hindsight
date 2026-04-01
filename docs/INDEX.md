@@ -21,9 +21,11 @@ library.
 
 ## Example Entry Points
 
-- [`examples/run_pipeline_example.py`](../examples/run_pipeline_example.py) runs the bundled crypto pipeline examples and shows cache reuse.
-- [`examples/pipeline_specs/crypto_momentum_baseline.yaml`](../examples/pipeline_specs/crypto_momentum_baseline.yaml) is the smallest end-to-end modeling example in the repository.
-- [`examples/ff3_model.yaml`](../examples/ff3_model.yaml) demonstrates a factor-construction workflow over CRSP and Compustat inputs.
+Example scripts and YAML live under `dev/examples/` in a local checkout (that directory is gitignored). Entry points:
+
+- `dev/examples/run_pipeline_example.py` — bundled crypto pipeline examples and cache reuse.
+- `dev/examples/pipeline_specs/crypto_momentum_baseline.yaml` — smallest end-to-end modeling example.
+- `dev/examples/ff3_model.yaml` — factor-construction workflow over CRSP and Compustat inputs.
 
 ## How To Read The Docs
 
@@ -33,6 +35,6 @@ library.
 
 ## Notes For Agents
 
-Human-facing docs live here and in [README.md](../README.md). For compact
-agent-facing routing and durable implementation notes, see
-[AGENTS.md](../AGENTS.md) and [`.agent-docs/INDEX.md`](../.agent-docs/INDEX.md).
+Human-facing docs live here and in [README.md](../README.md). [AGENTS.md](../AGENTS.md)
+routes automation; optional local `.agent-docs/` (gitignored) may exist beside
+this tree for agent workflows.

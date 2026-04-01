@@ -8,16 +8,18 @@ __pycache__/
 dist/
 *.egg
 
-# === Virtual Environments ===
+# === Virtual environments ===
 venv/
 .venv/
 
-# === Data Files ===
+# === Data / secrets ===
 *.parquet
 *.csv
 *.zip
+.env
+.env.*
 
-# === IDE / Editor ===
+# === IDE ===
 .vscode/
 .idea/
 
@@ -25,11 +27,7 @@ venv/
 .DS_Store
 Thumbs.db
 
-# === Environment ===
-.env
-.env.*
-
-# === Build Artifacts ===
+# === Build / packaging ===
 build/
 
 # === Caches ===
@@ -38,29 +36,30 @@ build/
 .ruff_cache/
 **/.ruff_cache/
 
-# === Jupyter ===
-*.ipynb
+# === Jupyter checkpoints ===
 .ipynb_checkpoints/
+**/.ipynb_checkpoints/
 
 # === Logs ===
 *.log
 
-# === Output Plots ===
-*.png
-
-# === Dev Scratch ===
+# === Local development tree ===
+# Examples, notebooks, plot exports, and scratch artifacts live here (untracked).
 dev/
-source/
-full_docs.md
-full_docs_api.md
-project_paths.txt
-project_structure.txt
 
-# === AI / Agent Directories ===
+# === Root-level scratch (use dev/ instead) ===
+/full_docs*.md
+/project_paths.txt
+/project_structure.txt
+
+# Root-level notebooks and plots (prefer dev/notebooks and dev/plots)
+/*.ipynb
+/*.png
+
+# === Agent / automation workspaces (not published with the library) ===
 .agent/
+.agent-docs/
 .agents/
 .claude/
 .codex/
-
-# === Mission Infrastructure ===
 .factory/

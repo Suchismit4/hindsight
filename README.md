@@ -37,8 +37,10 @@ walk-forward evaluation.
 
 ## Examples
 
-- [`examples/run_pipeline_example.py`](examples/run_pipeline_example.py) shows an end-to-end cached pipeline run with the bundled crypto specs.
-- [`examples/ff3_model.yaml`](examples/ff3_model.yaml) shows a factor-construction workflow on WRDS data. It is an example of the pipeline system, not the architectural center of the library.
+Example scripts and YAML specs live under `dev/examples/` in a local checkout (that tree is not version-controlled). Use them as runnable references:
+
+- `dev/examples/run_pipeline_example.py` — end-to-end cached pipeline run with the bundled crypto specs.
+- `dev/examples/ff3_model.yaml` — factor-construction workflow on WRDS data (illustrative of the pipeline system, not the architectural center of the library).
 
 ## What The Repo Emphasizes
 
@@ -48,7 +50,6 @@ walk-forward evaluation.
 
 ## Notes For Automation
 
-`AGENTS.md` is the thin router for future coding agents. The compact durable
-agent-facing reference lives in [`.agent-docs/`](.agent-docs/INDEX.md). Those
-files are for agent onboarding and routing, not the primary human-facing
-documentation surface.
+`AGENTS.md` is the thin router for coding agents. Optional local workspaces such
+as `.agent-docs/` (ignored by git) can hold compact agent-facing notes; human
+documentation is under `docs/` and this README.

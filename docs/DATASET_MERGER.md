@@ -134,7 +134,7 @@ merges:
     variables: ["seq", "txditc", "ps"]
 ```
 
-That is the same pattern used by [`examples/ff3_model.yaml`](../examples/ff3_model.yaml).
+That is the same pattern used by `dev/examples/ff3_model.yaml` (local `dev/` tree).
 
 ### Merge multiple sources in order
 

@@ -7,8 +7,8 @@ structured, what each stage does, which processor and model paths are supported
 by the checked-in executor, and what output artifacts you get back.
 
 It does not try to dump every schema field. For exhaustive key-by-key reference,
-see the compact YAML reference at
-[`../.agent-docs/YAML_REFERENCE.md`](../.agent-docs/YAML_REFERENCE.md) after you
+start from [`../src/pipeline/spec/schema.py`](../src/pipeline/spec/schema.py)
+(`PipelineSpec`) and the YAML under `src/data/ast/definitions/` after you
 understand the mental model.
 
 ## When To Read It
@@ -191,12 +191,12 @@ model:
     step_hours: 24
 ```
 
-That pipeline is used directly by
-[`examples/run_pipeline_example.py`](../examples/run_pipeline_example.py).
+That pipeline is used directly by `dev/examples/run_pipeline_example.py` (local
+`dev/` tree; gitignored).
 
 ### A factor-style pipeline without a model
 
-`examples/ff3_model.yaml` shows the other important path: infer-stage processors
+`dev/examples/ff3_model.yaml` shows the other important path: infer-stage processors
 can be the end product.
 
 In that spec:
