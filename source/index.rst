@@ -1,19 +1,35 @@
-.. Hindsight Pipeline Framework documentation master file, created by
-   sphinx-quickstart on Sat Sep 28 00:00:00 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. Hindsight documentation master file.
 
-Welcome to Hindsight Pipeline Framework's documentation!
-========================================================
+Hindsight
+=========
 
-Hindsight is a framework for financial data processing, feature engineering, and backtesting with ML integration.
+Hindsight is a YAML-first quantitative research library built around ``xarray``
+datasets and JAX-backed numerical workflows. It is designed for researchers and
+engineers who want a consistent path from raw market data through feature
+engineering, preprocessing, walk-forward model execution, and portfolio-style
+analysis without rewriting pipeline glue for each project.
+
+The core system model is::
+
+    provider → loader → xr.Dataset → formulas/processors → walk-forward/model
+
+Most datasets are normalized into a panel layout over::
+
+    (year, month, day, hour, asset)
+
+That shape contract is what lets the same library support multi-frequency data
+loading, formula-driven feature computation, cross-sectional processors, and
+walk-forward evaluation without repeatedly reinterpreting the time axis.
+
+----
 
 .. toctree::
    :maxdepth: 2
-   :caption: Getting Started:
+   :caption: Getting Started
 
    getting_started/overview
    getting_started/data_loading
+   getting_started/yaml_pipeline
    getting_started/data_handler
    getting_started/feature_engineering
    getting_started/walk_forward
@@ -22,13 +38,13 @@ Hindsight is a framework for financial data processing, feature engineering, and
 
 .. toctree::
    :maxdepth: 2
-   :caption: Examples:
+   :caption: Examples
 
    examples/complete_workflow
 
 .. toctree::
    :maxdepth: 2
-   :caption: API Reference:
+   :caption: API Reference
 
    api/pipeline
    api/data_handler
@@ -41,4 +57,3 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-

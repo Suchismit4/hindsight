@@ -1,63 +1,125 @@
-Hindsight Pipeline Framework Overview
-=====================================
+Overview
+========
 
-The Hindsight Pipeline Framework is a Python library for multi-asset, time-series research. It provides well-defined layers for transforming large xarray-based datasets, planning walk-forward segments, and integrating machine learning models without leaking future information.
+Hindsight is a Python library for multi-asset, time-series quantitative research.
+It provides well-defined layers for loading data, computing features, transforming
+datasets across temporal segments, and integrating machine learning models without
+leaking future information into training or inference.
 
 What This Guide Covers
 ----------------------
 
-- How the pipeline is structured around "how" (data transformations) and "when" (temporal segmentation).
-- Core modules that form the public API.
-- Data flow from raw datasets to aggregated predictions.
-- A short example showing the typical control flow.
+- How the library is structured around data transformations ("how") and temporal
+  segmentation ("when").
+- The xarray panel layout that every subsystem shares.
+- The two execution paths: programmatic Python API and YAML-driven pipeline spec.
+- A concise end-to-end example using the Python API.
+
+The Two Ways to Use Hindsight
+------------------------------
+
+**Python API (direct)**
+    Instantiate ``DataHandler``, ``SegmentConfig``, ``ModelRunner``, and
+    related objects directly in Python. This is the right path when you want
+    interactive exploration, custom loaders not yet expressed in YAML, or
+    tight integration with an existing codebase.
+
+**YAML pipeline spec (declarative)**
+    Describe the full workflow in a ``PipelineSpec`` YAML file and run it
+    through ``PipelineExecutor``. This path is content-addressably cached at
+    each stage (L1 raw → L2 postprocessed → L3 features → L4 preprocessed
+    → L5 model), so intermediate results survive across runs. See
+    :doc:`yaml_pipeline` for authoring guidance.
+
+Both paths use the same underlying subsystems. The YAML executor is
+orchestration, not a separate implementation.
 
 Architectural Separation
 ------------------------
 
 **Data transformations (the "how")**
-    Managed by ``src.pipeline.data_handler``. A ``DataHandler`` applies processors in three stages:
+    Managed by ``src.pipeline.data_handler``. A ``DataHandler`` applies
+    processors in three ordered stages:
 
-    - ``shared`` processors run once on the entire dataset. They are stateless or cache their output for both training and inference paths.
-    - ``learn`` processors fit on training data and produce state objects (typically xarray Datasets) that are later reused when transforming inference slices.
-    - ``infer`` processors run transform-only operations after the learn stage to finish inference-specific adjustments.
+    - ``shared`` processors run once on the entire dataset before any temporal
+      slicing. They are appropriate for stateless operations (forward-fill,
+      formula evaluation) or expensive transforms you want cached across
+      segments.
+    - ``learn`` processors fit on a training window and store a compact state
+      dataset. That state is reapplied when transforming the corresponding
+      inference window, which is what prevents lookahead bias in normalization
+      or similar statistics.
+    - ``infer`` processors run transform-only operations on inference slices,
+      after learn-stage states have been applied. Portfolio construction steps
+      (cross-sectional sorts, portfolio returns) typically live here.
 
-    Typical processors live in ``src.pipeline.data_handler.processors``. They operate on xarray objects so they can broadcast across dimensions such as ``asset`` and the flattened calendar index.
+    Processors live in ``src.pipeline.data_handler.processors`` and operate on
+    xarray objects so they broadcast cleanly across ``asset`` and the
+    hierarchical time dimensions.
 
 **Temporal segmentation (the "when")**
     Exposed through ``src.pipeline.walk_forward``. Key abstractions:
 
-    - ``Segment`` defines train/infer windows for a single iteration.
-    - ``SegmentPlan`` is an ordered list of segments.
-    - ``SegmentConfig`` lets you describe a rolling or expanding schedule; ``make_plan`` converts that configuration into a ``SegmentPlan`` while clipping to available data and optionally inserting gaps.
+    - ``Segment``: one walk-forward step, carrying ``train_start``,
+      ``train_end``, ``infer_start``, and ``infer_end`` timestamps.
+    - ``SegmentPlan``: an ordered list of segments.
+    - ``SegmentConfig``: declarative description of a rolling or expanding
+      schedule. ``make_plan`` converts it into a ``SegmentPlan`` while
+      clipping to dataset boundaries and inserting optional gaps.
 
-    ``WalkForwardRunner`` takes a ``DataHandler`` and a ``SegmentPlan``. It applies the handler to each segment, respecting the train/infer boundaries, capturing learned states per segment, and aggregating processed inference panels back into a global Dataset.
+    ``WalkForwardRunner`` applies a ``DataHandler`` over each segment in a
+    plan: shared view once, then per-segment learn/infer application. It
+    aggregates processed inference panels back into a global dataset using a
+    configurable overlap policy.
 
 **Model integration**
-    Resides in ``src.pipeline.model``. ``ModelRunner`` mirrors ``WalkForwardRunner`` but adds per-segment model fitting and prediction. ``ModelAdapter`` objects (for example, ``SklearnAdapter``) act as bridges between xarray slices and model-specific APIs. A factory function instantiates a fresh adapter per segment to avoid cross-segment leakage.
+    Resides in ``src.pipeline.model``. ``ModelRunner`` mirrors
+    ``WalkForwardRunner`` but adds per-segment model fitting and prediction.
+    ``ModelAdapter`` objects—``SklearnAdapter`` is the shipped implementation—
+    translate between xarray slices and model-specific APIs. A factory
+    callable instantiates a fresh adapter per segment to prevent cross-segment
+    parameter leakage.
+
+**Formula engine**
+    The ``src.data.ast`` package provides a declarative formula language for
+    feature engineering. ``FormulaEval`` (a ``DataHandler`` processor) wraps
+    this engine, evaluating YAML-defined formulas and merging outputs into the
+    dataset. The engine supports dependency resolution, static context aliases,
+    and optional JAX JIT compilation.
 
 Core Data Structures
 --------------------
 
-The framework consistently uses ``xarray.Dataset`` and ``xarray.DataArray`` objects that share a hierarchical calendar:
+The framework uses ``xarray.Dataset`` and ``xarray.DataArray`` objects with a
+hierarchical calendar:
 
 - ``year``, ``month``, ``day`` (and optionally ``hour``) dims form a rectangular grid.
-- ``asset`` dimension indexes securities.
-- ``time`` coordinate holds datetime64 values; ``time_flat`` (if present) is a flattened index aligned with stacked views.
+- ``asset`` dimension indexes securities or instruments.
+- ``time`` coordinate holds ``datetime64`` values aligned to the stacked calendar.
+- ``time_flat`` (when present) is a 1-D index corresponding to the stacked view
+  used internally by runners for efficient integer slicing.
 
-Processors, planners, and adapters all rely on this layout to perform vectorized operations without copying large arrays.
+Every processor, planner, and adapter assumes this layout, which is what
+enables vectorized cross-sectional and time-series operations without
+reshaping data on every call.
 
-End-to-End Flow
----------------
+End-to-End Flow (Python API)
+-----------------------------
 
-1. Load or construct an xarray dataset (see ``DataManager`` utilities under ``src.data``).
-2. Configure a ``HandlerConfig`` with the processors you need. Instantiate ``DataHandler`` with the raw dataset.
-3. Describe your walk-forward schedule using ``SegmentConfig`` and call ``make_plan``.
-4. Choose an execution path:
+1. Load or construct an xarray dataset. The ``DataManager`` class under
+   ``src.data.managers`` handles YAML-configured loading from registered
+   providers; for custom sources, build the dataset directly.
+2. Configure a ``HandlerConfig`` with the processors you need. Instantiate
+   ``DataHandler`` with the base dataset.
+3. Describe your walk-forward schedule with ``SegmentConfig`` and call
+   ``make_plan``.
+4. Choose a runner:
 
-   - ``WalkForwardRunner`` if you only need processed datasets per segment.
-   - ``ModelRunner`` if you also want model predictions aggregated back into a Dataset.
+   - ``WalkForwardRunner`` for processed datasets without model predictions.
+   - ``ModelRunner`` for walk-forward training and prediction aggregation.
 
-5. Inspect results: both runners return objects with the aggregated output, per-segment metadata, and optional learned states.
+5. Inspect results: both runners return objects containing the aggregated
+   output dataset, per-segment metadata, and learned states.
 
 Concise Example
 ---------------
@@ -65,21 +127,22 @@ Concise Example
 .. code-block:: python
 
    import numpy as np
+   import xarray as xr
    from src.pipeline import (
        DataHandler, HandlerConfig, PipelineMode,
-       PerAssetFFill, CSZScore, make_plan, SegmentConfig, ModelRunner
+       PerAssetFFill, CSZScore, make_plan, SegmentConfig,
    )
-   from src.pipeline.model import SklearnAdapter
-   from sklearn.ensemble import RandomForestRegressor
+   from src.pipeline.model import ModelRunner, SklearnAdapter
+   from sklearn.linear_model import Ridge
 
-   # Assume ``raw_ds`` is an xarray.Dataset loaded elsewhere.
+   # raw_ds is an xarray.Dataset with (year, month, day, asset) dims.
 
    config = HandlerConfig(
        shared=[PerAssetFFill(name="ffill")],
        learn=[CSZScore(name="norm", vars=["close"])],
        mode=PipelineMode.INDEPENDENT,
-       feature_cols=["close_csz"],
-       label_cols=["target"]
+       feature_cols=["close_norm"],
+       label_cols=["fwd_return"]
    )
    handler = DataHandler(base=raw_ds, config=config)
 
@@ -89,23 +152,23 @@ Concise Example
        train_span=np.timedelta64(365, "D"),
        infer_span=np.timedelta64(30, "D"),
        step=np.timedelta64(30, "D"),
-       gap=np.timedelta64(1, "D")
+       gap=np.timedelta64(1, "D"),
    )
    plan = make_plan(seg_cfg, ds_for_bounds=raw_ds)
 
-   def factory():
+   def make_adapter():
        return SklearnAdapter(
-           model=RandomForestRegressor(),
+           model=Ridge(),
            handler=handler,
-           output_var="pred"
+           output_var="pred",
        )
 
    runner = ModelRunner(
        handler=handler,
        plan=plan,
-       model_factory=factory,
-       feature_cols=["close_csz"],
-       label_col="target"
+       model_factory=make_adapter,
+       feature_cols=config.feature_cols,
+       label_col=config.label_cols[0],
    )
    result = runner.run()
    predictions = result.pred_ds["pred"]
@@ -113,7 +176,9 @@ Concise Example
 Where to Go Next
 ----------------
 
-- ``getting_started/data_loading`` describes dataset requirements.
-- ``getting_started/data_handler`` and ``getting_started/feature_engineering`` dive into processor design.
-- ``getting_started/walk_forward`` documents segment planning and execution internals.
-- ``getting_started/model_integration`` covers adapters and model runners in more depth.
+- :doc:`data_loading` describes dataset construction and the ``DataManager`` API.
+- :doc:`yaml_pipeline` explains the YAML spec format and ``PipelineExecutor``.
+- :doc:`data_handler` covers processor design and the three-stage pipeline in depth.
+- :doc:`feature_engineering` documents the built-in processors and the formula engine.
+- :doc:`walk_forward` covers segment planning and execution internals.
+- :doc:`model_integration` explains adapters and the ``ModelRunner`` workflow.
