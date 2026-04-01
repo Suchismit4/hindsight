@@ -1,9 +1,16 @@
-Model Integration API Reference
-=================================
+Model API Reference
+====================
 
 .. currentmodule:: src.pipeline.model
 
-This module provides model integration capabilities for seamless integration of machine learning models with the pipeline framework.
+The ``model`` package extends walk-forward execution with model fitting and
+prediction. The adapter pattern decouples ``ModelRunner`` from any specific
+ML library: the runner calls the ``ModelAdapter`` interface, and the adapter
+translates to whatever library is underneath.
+
+``SklearnAdapter`` is the shipped implementation. It wraps any scikit-learn
+estimator exposing ``fit`` / ``predict``. Integrating a different library
+requires implementing ``ModelAdapter`` (see :doc:`../getting_started/model_integration`).
 
 Main Classes
 ------------
@@ -16,16 +23,13 @@ Main Classes
    ModelRunner
    ModelRunnerResult
 
-Adapter Module
---------------
+Detailed Module Documentation
+-------------------------------
 
 .. automodule:: src.pipeline.model.adapter
    :members:
    :undoc-members:
    :show-inheritance:
-
-Runner Module
--------------
 
 .. automodule:: src.pipeline.model.runner
    :members:

@@ -1,133 +1,204 @@
 Model Integration and Execution
 ================================
 
-The ``model`` package extends walk-forward execution by fitting predictive models on each segment and aggregating forecasts. Rather than binding the pipeline to a specific ML library, Hindsight uses adapters that translate between xarray slices and model APIs.
+The ``model`` package extends walk-forward execution by fitting predictive
+models on each segment and aggregating forecasts. Rather than binding the
+pipeline to a specific ML library, Hindsight uses an adapter interface that
+translates between xarray slices and model-specific APIs.
 
 ModelAdapter Interface
 ----------------------
 
-``ModelAdapter`` (``src.pipeline.model.adapter``) defines the minimal contract:
+``ModelAdapter`` (``src.pipeline.model.adapter``) defines the minimal contract
+that any model integration must implement:
 
-- ``fit(ds, features, label=None, sample_weight=None)`` trains the underlying model using variables extracted from ``ds``.
-- ``predict(ds, features)`` returns an xarray ``DataArray`` aligned with the segment’s inference slice.
-- ``partial_fit`` (optional) enables incremental training.
-- ``get_state`` / ``load_state`` (optional) provide persistence hooks.
+- ``fit(ds, features, label=None, sample_weight=None)``: train the underlying
+  model using variables extracted from the dataset.
+- ``predict(ds, features)``: return an ``xr.DataArray`` aligned with the
+  segment's inference slice.
+- ``partial_fit`` (optional): enables incremental training.
+- ``get_state`` / ``load_state`` (optional): persistence hooks for checkpoint
+  and restore workflows.
 
-Adapters are responsible for converting the xarray slice into the format expected by the model (typically flattening ``(time, asset)`` into ``(n_samples, n_features)`` and dropping NaNs) and mapping predictions back to the original coordinates.
+Adapters convert the xarray slice into the format the model expects—typically
+flattening ``(time, asset)`` into ``(n_samples, n_features)`` while dropping
+``NaN`` rows—and map predictions back to the original coordinates.
 
 SklearnAdapter
 --------------
 
-``SklearnAdapter`` wraps any scikit-learn estimator exposing ``fit``/``predict``. It uses the handler’s ``to_arrays_for_model`` helper to extract feature and label arrays. Example:
+``SklearnAdapter`` is the shipped implementation. It wraps any scikit-learn
+estimator that exposes ``fit`` / ``predict``, and handles all xarray-to-numpy
+conversion internally.
 
 .. code-block:: python
 
-   from sklearn.ensemble import RandomForestRegressor
+   from sklearn.ensemble import GradientBoostingRegressor
    from src.pipeline.model import SklearnAdapter
 
    adapter = SklearnAdapter(
-       model=RandomForestRegressor(n_estimators=100, random_state=42),
+       model=GradientBoostingRegressor(n_estimators=100, random_state=42),
        handler=handler,
        output_var="score",
-       drop_nan_rows=True
+       drop_nan_rows=True,
    )
 
 During ``fit``, the adapter:
 
-1. Converts the training dataset to ``X`` (``T x N x J``) and ``y`` arrays.
-2. Flattens to ``(T*N, J)`` while removing rows with NaNs (if ``drop_nan_rows`` is True).
-3. Calls the estimator’s ``fit`` method (with optional sample weights).
+1. Calls ``handler.to_arrays_for_model`` to extract ``X`` (shape
+   ``T × N × J``) and ``y`` arrays from the processed dataset.
+2. Flattens to ``(T*N, J)`` and drops rows with ``NaN`` entries when
+   ``drop_nan_rows=True``.
+3. Calls the estimator's ``fit`` method, passing optional sample weights if
+   provided.
 
-``predict`` performs the reverse process, reshaping predictions back to the full time/asset grid while preserving NaNs where the model could not produce values.
+``predict`` performs the reverse: the model produces a 1-D prediction array,
+which is reshaped back to the time/asset grid and returned as an
+``xr.DataArray`` with the coordinates from the inference slice.
 
 ModelRunner Workflow
 --------------------
 
-``ModelRunner`` coordinates data processing, segmentation, and model execution:
+``ModelRunner`` coordinates segmentation, data processing, and model execution.
+It uses a gather-scatter pattern for efficiency:
 
-1. Compute shared view once.
-2. Pre-stack the dataset and pre-compute train/infer integer slices for all segments.
-3. For each segment:
-   - Slice train and infer windows from the shared view.
-   - Fit learn processors on the train slice and produce states.
-   - Transform the inference slice using the stored states and infer processors.
-   - Instantiate a fresh adapter via ``model_factory`` and fit/predict on the processed slices.
-   - Scatter predictions into a global buffer using the configured overlap policy.
-4. Unstack the global buffer to produce an aggregated ``Dataset`` with the specified ``output_var``.
+**Setup**
+    Compute the shared view once and pre-stack the dataset. Pre-allocate a
+    global ``NaN``-filled prediction buffer. Pre-compute integer-based slice
+    boundaries for all segments in the plan.
 
-The result is a ``ModelRunnerResult`` containing ``pred_ds`` (predictions), ``segment_states`` (learn-stage states), and run metadata.
+**Loop (gather + scatter)**
+    For each ``Segment``:
 
-Overlap Policies
-----------------
+    1. Slice train and infer windows from the stacked shared view using
+       pre-computed integer indices.
+    2. Apply learn processors on the train slice, capturing states.
+    3. Transform the inference slice using the stored states and any infer
+       processors.
+    4. Instantiate a fresh model via ``model_factory()``—this is critical for
+       segment isolation; each segment gets a clean, untrained model.
+    5. Fit the model on the processed training slice, predict on the processed
+       inference slice.
+    6. Scatter predictions into the global buffer using the configured
+       overlap policy.
 
-Identical to ``WalkForwardRunner``: ``last`` overwrites earlier predictions with later ones where they overlap; ``first`` keeps the earliest prediction and only fills gaps with subsequent segments.
-
-Debugging Controls
-------------------
-
-``ModelRunner`` accepts optional parameters to narrow execution during development:
-
-- ``debug_start`` / ``debug_end``: Limit the inference window in the global buffer.
-- ``debug_asset``: Restrict processing to a single asset for quicker iteration.
-
-These flags ensure you can inspect a slice of the workflow without running the full backtest.
-
-Custom Adapters
----------------
-
-To support other libraries (PyTorch, TensorFlow, statsmodels), subclass ``ModelAdapter``:
+**Finalize**
+    Unstack the global prediction buffer into the original multi-dimensional
+    calendar format.
 
 .. code-block:: python
 
-   from src.pipeline.model import ModelAdapter
-   import torch
-
-   class TorchAdapter(ModelAdapter):
-       def __init__(self, network, handler):
-           self.network = network
-           self.handler = handler
-
-       def fit(self, ds, features, label=None, sample_weight=None):
-           X, y = self.handler.to_arrays_for_model(ds, features, [label] if label else None)
-           # Convert to tensors, train network...
-           return self
-
-       def predict(self, ds, features):
-           X, _, idx = self.handler.to_arrays_for_model(ds, features, None, return_indexer=True)
-           # Run inference, map back using idx
-           # Return xarray.DataArray with proper coordinates
-
-Factory Functions
------------------
-
-``model_factory`` can be either an adapter instance or a callable returning a fresh adapter. Passing a callable is recommended so each segment gets a clean model instance, preventing leakage of learned parameters.
-
-Putting It Together
--------------------
-
-The following snippet assumes you have already prepared ``handler``, ``plan``, and ``handler_config`` as described in earlier sections (for example, by loading a dataset with ``DataManager`` and building a ``SegmentPlan``).
-
-.. code-block:: python
-
-   from src.pipeline.model import ModelRunner
+   from src.pipeline.model import ModelRunner, SklearnAdapter
+   from sklearn.linear_model import Ridge
 
    def make_adapter():
        return SklearnAdapter(
-           model=RandomForestRegressor(n_estimators=50, random_state=0),
+           model=Ridge(alpha=1.0),
            handler=handler,
-           output_var="score"
+           output_var="score",
        )
 
    runner = ModelRunner(
        handler=handler,
        plan=plan,
        model_factory=make_adapter,
-       feature_cols=handler_config.feature_cols,
-       label_col=handler_config.label_cols[0],
-       overlap_policy="last"
+       feature_cols=config.feature_cols,
+       label_col=config.label_cols[0],
+       overlap_policy="last",
    )
 
    result = runner.run()
    pred_ds = result.pred_ds
 
-From here, you can merge ``pred_ds`` with the original dataset, compute metrics, or feed predictions into downstream systems.
+The ``model_factory`` should always be a callable, not a pre-instantiated
+adapter, so each segment receives an independent model object.
+
+Overlap Policies
+----------------
+
+Identical to ``WalkForwardRunner``:
+
+- ``"last"`` (default): later-segment predictions overwrite earlier ones where
+  inference windows overlap.
+- ``"first"``: first-segment predictions are preserved; later segments fill
+  remaining ``NaN`` positions.
+
+Debugging Controls
+------------------
+
+``ModelRunner`` accepts optional parameters to restrict execution during
+development:
+
+- ``debug_start`` / ``debug_end``: limit the inference window written to the
+  global buffer.
+- ``debug_asset``: restrict processing to a single asset for faster iteration.
+
+These do not change the model training behavior—training still uses the full
+train slice—but they let you inspect a subset of predictions without a full
+run.
+
+ModelRunnerResult
+-----------------
+
+``runner.run()`` returns a ``ModelRunnerResult`` with:
+
+- ``pred_ds``: xarray ``Dataset`` on the same calendar as the input, containing
+  the prediction variable (``output_var`` from the adapter).
+- ``segment_states``: list of per-segment state dicts, including learn-stage
+  processor states.
+
+Implementing Custom Adapters
+-----------------------------
+
+``SklearnAdapter`` is the only shipped implementation. If you need to integrate
+a different library, subclass ``ModelAdapter`` and implement ``fit`` and
+``predict``. The contract is minimal: receive an xarray ``Dataset`` plus
+column name lists, return an xarray ``DataArray`` aligned to the segment slice.
+
+.. code-block:: python
+
+   from dataclasses import dataclass
+   from typing import List, Optional
+   import xarray as xr
+   from src.pipeline.model import ModelAdapter
+
+   @dataclass
+   class StatsmodelsOLSAdapter(ModelAdapter):
+       handler: object
+       output_var: str = "pred"
+       _model = None
+
+       def fit(
+           self,
+           ds: xr.Dataset,
+           features: List[str],
+           label: Optional[str] = None,
+           sample_weight=None,
+       ):
+           import statsmodels.api as sm
+           X, y, _ = self.handler.to_arrays_for_model(ds, features, [label])
+           # flatten and drop NaN rows
+           X_flat = X.reshape(-1, X.shape[-1])
+           y_flat = y.reshape(-1)
+           mask   = ~np.isnan(X_flat).any(axis=1) & ~np.isnan(y_flat)
+           self._model = sm.OLS(y_flat[mask], sm.add_constant(X_flat[mask])).fit()
+           return self
+
+       def predict(self, ds: xr.Dataset, features: List[str]) -> xr.DataArray:
+           import statsmodels.api as sm
+           X, _, idx = self.handler.to_arrays_for_model(ds, features, None, return_indexer=True)
+           X_flat = X.reshape(-1, X.shape[-1])
+           preds  = self._model.predict(sm.add_constant(X_flat))
+           # map back to xr.DataArray with original coordinates...
+
+The adapter pattern means the rest of the runner pipeline—segmentation, state
+management, buffer scatter—stays unchanged regardless of which model library
+you plug in.
+
+Where to Go Next
+----------------
+
+- :doc:`execution_analysis` covers result inspection and how to merge predictions
+  with the original dataset.
+- :doc:`../api/model` is the API reference for ``ModelAdapter``, ``SklearnAdapter``,
+  and ``ModelRunner``.
