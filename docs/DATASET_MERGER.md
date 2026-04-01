@@ -1,530 +1,174 @@
-# Dataset Merger: Comprehensive Documentation
+# Dataset Merger
 
-## Table of Contents
+## What This Page Covers
 
-1. [Overview](#overview)
-2. [The Problem: Why Simple Merge Doesn't Work](#the-problem-why-simple-merge-doesnt-work)
-3. [Core Concepts](#core-concepts)
-4. [API Reference](#api-reference)
-5. [How It Works Internally](#how-it-works-internally)
-6. [Usage Examples](#usage-examples)
-7. [Point-in-Time Correctness](#point-in-time-correctness)
-8. [Common Patterns](#common-patterns)
+This page explains how Hindsight merges multiple `xarray` datasets when they do
+not share the same frequency, asset coverage, or publication timing. It covers
+the merge configuration surface, the alignment modes implemented in
+`src/pipeline/data_handler/merge.py`, and the point-in-time behavior that makes
+these merges usable in research workflows.
 
----
+## When To Read It
 
-## Overview
+Read this page when you are combining multiple sources in a pipeline, especially
+when one source is lower frequency than another or when publication lag matters.
+If you are working on CRSP plus Compustat, quarterly fundamentals, earnings
+surprises, or any similar workflow, this page is the right entry point.
 
-The `DatasetMerger` is a utility for combining xarray datasets with different time frequencies while maintaining data integrity and point-in-time correctness. It's specifically designed for financial data workflows where you need to merge:
+## Core Ideas
 
-- **Monthly price data** (CRSP) with **annual fundamentals** (Compustat)
-- **Daily returns** with **quarterly earnings**
-- Any combination of different-frequency panel data
+### Why `xr.merge()` is not enough
 
-The merger works with Hindsight's multi-dimensional time structure (`year`, `month`, `day`, `hour`) rather than a single flattened time axis.
+The merger exists because Hindsight datasets are not plain two-dimensional
+tables. They typically carry explicit calendar dimensions:
 
-**Location:** `src/pipeline/data_handler/merge.py`
-
----
-
-## The Problem: Why Simple Merge Doesn't Work
-
-### Hindsight's Data Structure
-
-Hindsight stores panel data as xarray Datasets with dimensions:
-
-```
-Dimensions:  (year: 5, month: 12, day: 1, hour: 1, asset: 1000)
-Coordinates:
-  * year     (year) int64 2016 2017 2018 2019 2020
-  * month    (month) int64 1 2 3 4 5 6 7 8 9 10 11 12
-  * day      (day) int64 1
-  * hour     (hour) int64 0
-  * asset    (asset) int64 10001 10002 10003 ...
-  * time     (year, month, day, hour) datetime64[ns] ...
-Data variables:
-    ret      (year, month, day, hour, asset) float64 ...
-    me       (year, month, day, hour, asset) float64 ...
+```text
+(year, month, day, hour, asset)
 ```
 
-### The Frequency Mismatch Problem
+That creates real merge problems:
 
-**CRSP (Monthly):**
-```
-Dimensions: (year: 5, month: 12, day: 1, hour: 1, asset: 5000)
-Variables: ret, me, prc, vol, ...
-```
+- lower-frequency data must be expanded onto a richer time grid
+- asset universes differ between sources
+- variables need namespacing to avoid collisions
+- point-in-time correctness matters when one dataset is only available after a reporting lag
 
-**Compustat (Annual):**
-```
-Dimensions: (year: 5, month: 1, day: 1, hour: 1, asset: 4000)
-Variables: seq, txditc, at, ...
-```
+### The configuration surface
 
-A naive `xr.merge(crsp, compustat)` fails because:
+`MergeSpec` is the unit of merge configuration. The important fields are:
 
-1. **Different `month` dimensions**: CRSP has 12 months, Compustat has 1
-2. **Different `asset` sets**: Not all CRSP stocks have Compustat coverage
-3. **No time alignment**: Annual data needs to be broadcast across months
-4. **Point-in-time violation**: Using Dec 2019 data in Jan 2020 is look-ahead bias
+| Field | Purpose |
+| --- | --- |
+| `right_name` | Which named dataset to merge in |
+| `on` | Join dimension or dimensions, usually `asset` |
+| `time_alignment` | Alignment mode such as `ffill` or `as_of` |
+| `time_offset_months` | Shift availability forward or backward in calendar months |
+| `ffill_limit` | Optional forward-fill cap |
+| `prefix` / `suffix` | Rename incoming variables to avoid collisions |
+| `variables` / `drop_vars` | Include or exclude selected variables |
 
-### What DatasetMerger Solves
+### Alignment modes
 
-1. **Broadcasts** annual data across all 12 months
-2. **Aligns** on the `asset` dimension (keeping left's assets)
-3. **Forward-fills** missing values appropriately
-4. **Applies time offsets** for point-in-time correctness
-5. **Namespaces** variables to avoid collisions (`seq` → `comp_seq`)
+The merger currently exposes five alignment modes:
 
----
+| Mode | Meaning |
+| --- | --- |
+| `exact` | Require exact alignment on the existing time grid |
+| `ffill` | Carry lower-frequency values forward onto later periods |
+| `bfill` | Backfill from later values |
+| `nearest` | Use the nearest available observation |
+| `as_of` | Point-in-time style merge that uses the latest available value before the target period |
 
-## Core Concepts
+In real research workflows, `ffill` and `as_of` are the important modes. `as_of`
+is the one to reach for when the data should not appear before it was
+economically available.
 
-### MergeSpec: The Configuration Object
+### What the merger actually does
 
-`MergeSpec` is a dataclass that describes how to merge one dataset into another:
+A merge runs in three broad steps:
 
-```python
-@dataclass
-class MergeSpec:
-    right_name: str                           # Name of dataset to merge
-    on: Union[str, List[str]] = "asset"       # Join dimension(s)
-    time_alignment: TimeAlignment = FFILL     # How to align time
-    time_offset_months: int = 0               # Lag/lead offset
-    ffill_limit: Optional[int] = None         # Max forward-fill periods
-    prefix: str = ""                          # Variable name prefix
-    suffix: str = ""                          # Variable name suffix
-    variables: Optional[List[str]] = None     # Variables to include
-    drop_vars: Optional[List[str]] = None     # Variables to exclude
-```
+1. normalize and optionally rename the right-hand dataset
+2. expand it onto the left dataset's calendar
+3. align on the join dimensions and merge
 
-### TimeAlignment: How to Handle Time Differences
+In practice, that means the right dataset may be:
 
-```python
-class TimeAlignment(Enum):
-    EXACT = "exact"      # Only match exact timestamps (rare for cross-freq)
-    FFILL = "ffill"      # Forward-fill: carry last value forward
-    BFILL = "bfill"      # Backward-fill: carry next value backward
-    NEAREST = "nearest"  # Use nearest available value
-    AS_OF = "as_of"      # Point-in-time: like ffill but with offset logic
-```
+- reindexed to the left dataset's `year`
+- broadcast across `month`, `day`, or `hour`
+- shifted by `time_offset_months`
+- reindexed to the left dataset's asset coordinate
 
-**When to use each:**
+### Point-in-time behavior
 
-| Alignment | Use Case |
-|-----------|----------|
-| `FFILL` | Default for most merges; annual data fills forward through months |
-| `AS_OF` | Same as FFILL but semantically indicates point-in-time intent |
-| `BFILL` | Rare; when you want future data to fill backward |
-| `EXACT` | When frequencies match exactly |
-| `NEAREST` | When you want closest available value |
+The most important nontrivial field is `time_offset_months`.
 
-### MergeMethod: Join Types
+For annual fundamentals merged into monthly returns, a positive offset means the
+current year's data should only become visible after that lag has elapsed. That
+is what keeps a factor workflow from using information before it would have been
+known.
 
-```python
-class MergeMethod(Enum):
-    LEFT = "left"     # Keep all assets from left dataset
-    RIGHT = "right"   # Keep all assets from right dataset
-    INNER = "inner"   # Keep only assets in both datasets
-    OUTER = "outer"   # Keep all assets from both datasets
+This is why the FF3 example uses:
+
+```yaml
+merges:
+  - right_name: "compustat"
+    on: "asset"
+    time_alignment: "as_of"
+    time_offset_months: 6
 ```
 
-**Default is `LEFT`** - this keeps all CRSP stocks even if they don't have Compustat coverage (those get NaN for Compustat fields).
+The example is not special, but it is a good demonstration of the intended
+research discipline: define data availability in the merge layer, not as a
+hand-waved assumption downstream.
 
----
+## Practical Examples
 
-## API Reference
-
-### DatasetMerger Class
-
-```python
-class DatasetMerger:
-    def merge(
-        self,
-        left: xr.Dataset,           # Primary dataset (higher frequency)
-        right: xr.Dataset,          # Secondary dataset (to merge in)
-        spec: MergeSpec,            # Merge configuration
-        method: MergeMethod = LEFT  # Join type
-    ) -> xr.Dataset:
-        """Merge two datasets according to specification."""
-        
-    def merge_multiple(
-        self,
-        base: xr.Dataset,                    # Primary dataset
-        datasets: Dict[str, xr.Dataset],     # Named datasets to merge
-        specs: List[MergeSpec],              # One spec per dataset
-        method: MergeMethod = LEFT
-    ) -> xr.Dataset:
-        """Merge multiple datasets into base."""
-```
-
-### Convenience Function
-
-```python
-def merge_datasets(
-    base: xr.Dataset,
-    datasets: Dict[str, xr.Dataset],
-    merge_config: List[Dict[str, Any]]  # Config dicts instead of MergeSpec
-) -> xr.Dataset:
-    """
-    Merge using plain dictionaries (for YAML-driven configs).
-    
-    Example config:
-    [
-        {
-            'right_name': 'compustat',
-            'on': 'asset',
-            'time_alignment': 'as_of',
-            'time_offset_months': 6,
-            'prefix': 'comp_'
-        }
-    ]
-    """
-```
-
----
-
-## How It Works Internally
-
-### Step-by-Step Merge Process
-
-When you call `merger.merge(left, right, spec)`, here's what happens:
-
-#### Step 1: Prepare Right Dataset (`_prepare_right_dataset`)
-
-```python
-# If variables specified, select only those
-if spec.variables is not None:
-    right = right[spec.variables]
-
-# If drop_vars specified, remove those
-if spec.drop_vars is not None:
-    right = right.drop_vars(spec.drop_vars)
-
-# Apply prefix/suffix to avoid name collisions
-if spec.prefix or spec.suffix:
-    right = right.rename({var: f"{prefix}{var}{suffix}" for var in right.data_vars})
-```
-
-**Example:**
-```python
-# Before: right has variables ['seq', 'txditc', 'at']
-# With spec.prefix='comp_', spec.variables=['seq', 'at']
-# After: right has variables ['comp_seq', 'comp_at']
-```
-
-#### Step 2: Expand to Time Grid (`_expand_to_time_grid`)
-
-This is the core logic. For annual-to-monthly:
-
-```python
-# 1. Reindex year dimension to match left's years
-result = right.reindex(year=left.coords['year'], method=None)
-
-# 2. If right has no 'month' dimension, broadcast across all months
-if 'month' not in result.dims:
-    result = result.expand_dims(month=left.coords['month'])
-# If right has fewer months, reindex
-elif result.sizes['month'] < left.sizes['month']:
-    result = result.reindex(month=left.coords['month'], method=None)
-
-# 3. Same for 'day' and 'hour' dimensions
-
-# 4. Apply forward-fill along time dimensions
-for dim in ['year', 'month', 'day', 'hour']:
-    if dim in result.dims:
-        result = result.ffill(dim=dim, limit=ffill_limit)
-```
-
-**Visual example:**
-
-```
-Annual data (before):
-         Year 2019  Year 2020
-Asset A:   100        200
-
-After expand_dims(month=[1..12]):
-         Year 2019                    Year 2020
-         M1  M2  M3 ... M12           M1  M2  M3 ... M12
-Asset A: 100 NaN NaN ... NaN          200 NaN NaN ... NaN
-
-After ffill(dim='month'):
-         Year 2019                    Year 2020
-         M1  M2  M3 ... M12           M1  M2  M3 ... M12
-Asset A: 100 100 100 ... 100          200 200 200 ... 200
-```
-
-#### Step 3: Apply Time Offset (`_apply_offset_mask`)
-
-If `time_offset_months > 0`, we need to shift which year's data is available when:
-
-```python
-# For offset=6 (data available 6 months after fiscal year end):
-# - Months 1-6 of year Y use data from year Y-1
-# - Months 7-12 of year Y use data from year Y
-
-cutoff_month = offset_months % 12  # = 6
-
-for var in right.data_vars:
-    # Shift data by 1 year
-    shifted = da.shift(year=1)
-    
-    # Use current year data for months > cutoff, shifted for months <= cutoff
-    use_current = month_coord > cutoff_month
-    combined = xr.where(use_current, da, shifted)
-```
-
-**Visual example with offset=6:**
-
-```
-Before offset (wrong - look-ahead bias):
-         Year 2020
-         Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec
-Asset A: 200  200  200  200  200  200  200  200  200  200  200  200
-         ^^^ This uses 2020 data in Jan 2020, but 2020 annual report
-             isn't published until ~March 2021!
-
-After offset (correct - point-in-time):
-         Year 2020
-         Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec
-Asset A: 100  100  100  100  100  100  200  200  200  200  200  200
-         ^^^ Uses 2019 data (available) ^^^ Uses 2020 data (now available)
-```
-
-#### Step 4: Merge on Asset (`_merge_on_asset`)
-
-```python
-# Reindex right to match left's assets
-right = right.reindex(asset=left.coords['asset'], method=None)
-
-# Merge using xarray's merge
-result = xr.merge([left, right], join='left', compat='override')
-```
-
-Assets in left but not in right get NaN for right's variables.
-
----
-
-## Usage Examples
-
-### Basic: Merge Compustat into CRSP
+### Merge annual fundamentals into monthly returns
 
 ```python
 from src.pipeline.data_handler import DatasetMerger, MergeSpec, TimeAlignment
 
-# Load datasets
-crsp = load_crsp_monthly()      # (year, month, day, hour, asset)
-comp = load_compustat_annual()  # (year, month=1, day, hour, asset)
-
-# Create merger
 merger = DatasetMerger()
 
-# Define merge specification
 spec = MergeSpec(
-    right_name='compustat',
-    on='asset',
-    time_alignment=TimeAlignment.FFILL,
-    prefix='comp_'
-)
-
-# Merge
-merged = merger.merge(crsp, comp, spec)
-
-# Result has: ret, me, prc, ..., comp_seq, comp_txditc, comp_at
-```
-
-### With Point-in-Time Offset
-
-```python
-spec = MergeSpec(
-    right_name='compustat',
-    on='asset',
-    time_alignment=TimeAlignment.AS_OF,
-    time_offset_months=6,  # Data available 6 months after fiscal year end
-    prefix='comp_',
-    variables=['seq', 'txditc', 'at']  # Only these variables
-)
-
-merged = merger.merge(crsp, comp, spec)
-```
-
-### Merge Multiple Datasets
-
-```python
-merger = DatasetMerger()
-
-datasets = {
-    'compustat': comp_annual,
-    'ibes': ibes_quarterly,
-}
-
-specs = [
-    MergeSpec(
-        right_name='compustat',
-        on='asset',
-        time_alignment=TimeAlignment.AS_OF,
-        time_offset_months=6,
-        prefix='comp_'
-    ),
-    MergeSpec(
-        right_name='ibes',
-        on='asset',
-        time_alignment=TimeAlignment.FFILL,
-        prefix='ibes_'
-    ),
-]
-
-merged = merger.merge_multiple(crsp, datasets, specs)
-```
-
-### Using Config Dictionaries (for YAML)
-
-```python
-from src.pipeline.data_handler import merge_datasets
-
-config = [
-    {
-        'right_name': 'compustat',
-        'on': 'asset',
-        'time_alignment': 'as_of',
-        'time_offset_months': 6,
-        'prefix': 'comp_',
-        'variables': ['seq', 'txditc', 'at']
-    }
-]
-
-merged = merge_datasets(crsp, {'compustat': comp}, config)
-```
-
----
-
-## Point-in-Time Correctness
-
-### Why It Matters
-
-In backtesting and factor construction, using data before it was actually available creates **look-ahead bias**. This inflates performance metrics unrealistically.
-
-**Example: Book-to-Market Ratio**
-
-The Fama-French methodology:
-1. Use book equity from fiscal year ending in calendar year t-1
-2. Use market equity from December of year t-1
-3. Form portfolios at the end of June in year t
-4. Hold portfolios from July t to June t+1
-
-This means December 2019 book equity is used starting July 2020, not January 2020.
-
-### How DatasetMerger Handles It
-
-The `time_offset_months` parameter shifts when data becomes "available":
-
-```python
-spec = MergeSpec(
-    right_name='compustat',
-    time_offset_months=6,  # 6-month lag
-    ...
-)
-```
-
-**What happens internally:**
-
-For each variable in the right dataset:
-1. Create a shifted version (`da.shift(year=1)`)
-2. For months 1-6: use the shifted (previous year's) data
-3. For months 7-12: use the current year's data
-
-**Timeline visualization:**
-
-```
-Fiscal Year 2019 data (ends Dec 2019):
-├── Published: ~March 2020 (10-K filing deadline)
-├── Conservative availability: June 2020 (offset=6)
-└── Used in merged dataset: July 2020 - June 2021
-
-In the merged dataset:
-Year 2020, Months 1-6:  Uses 2018 fiscal year data
-Year 2020, Months 7-12: Uses 2019 fiscal year data
-Year 2021, Months 1-6:  Uses 2019 fiscal year data
-Year 2021, Months 7-12: Uses 2020 fiscal year data
-```
-
----
-
-## Common Patterns
-
-### Pattern 1: FF3 CRSP + Compustat Merge
-
-```python
-spec = MergeSpec(
-    right_name='compustat',
-    on='asset',
+    right_name="compustat",
+    on="asset",
     time_alignment=TimeAlignment.AS_OF,
     time_offset_months=6,
-    prefix='comp_',
-    variables=['seq', 'txditc', 'pstkrv', 'pstkl', 'pstk', 'at']
+    prefix="comp_",
+    variables=["seq", "txditc", "at"],
 )
 
 merged = merger.merge(crsp_monthly, compustat_annual, spec)
-
-# Now compute book equity
-# BE = SEQ + TXDITC - PS (where PS = coalesce(pstkrv, pstkl, pstk, 0))
 ```
 
-### Pattern 2: Select Specific Variables
+### Use declarative merge config in a pipeline spec
+
+```yaml
+merge_base: "crsp"
+merges:
+  - right_name: "compustat"
+    on: "asset"
+    time_alignment: "as_of"
+    time_offset_months: 6
+    variables: ["seq", "txditc", "ps"]
+```
+
+That is the same pattern used by [`examples/ff3_model.yaml`](../examples/ff3_model.yaml).
+
+### Merge multiple sources in order
 
 ```python
-# Only merge specific Compustat variables
-spec = MergeSpec(
-    right_name='compustat',
-    variables=['seq', 'at'],  # Only these
-    prefix='comp_'
-)
+specs = [
+    MergeSpec(
+        right_name="compustat",
+        on="asset",
+        time_alignment=TimeAlignment.AS_OF,
+        time_offset_months=6,
+        prefix="comp_",
+    ),
+    MergeSpec(
+        right_name="ibes",
+        on="asset",
+        time_alignment=TimeAlignment.FFILL,
+        prefix="ibes_",
+    ),
+]
+
+merged = merger.merge_multiple(base=crsp, datasets=datasets, specs=specs)
 ```
 
-### Pattern 3: Exclude Variables
+## Common Pitfalls
 
-```python
-# Merge all except certain variables
-spec = MergeSpec(
-    right_name='compustat',
-    drop_vars=['indfmt', 'datafmt', 'popsrc', 'consol'],  # Exclude these
-    prefix='comp_'
-)
-```
+- Treating `as_of` and `ffill` as interchangeable. They can look similar in a toy example, but `as_of` is the safer signal of intent when publication lag matters.
+- Forgetting to namespace incoming variables. A merge that silently collides with existing variable names is hard to reason about later.
+- Assuming identical asset dtypes across sources. The merger normalizes join-coordinate dtypes because real datasets often do not arrive in the same type.
+- Thinking the merge layer is only about convenience. In this codebase it is part of the research contract: publication lag and availability belong here.
+- Building the whole workflow around FF3 terminology. FF3 is just one example of a broader multi-source, point-in-time merge pattern.
 
-### Pattern 4: Inner Join (Only Common Assets)
+## Read Next
 
-```python
-merged = merger.merge(
-    crsp, comp, spec,
-    method=MergeMethod.INNER  # Only keep assets in both
-)
-```
-
-### Pattern 5: Limit Forward-Fill
-
-```python
-spec = MergeSpec(
-    right_name='compustat',
-    time_alignment=TimeAlignment.FFILL,
-    ffill_limit=12,  # Only fill up to 12 months
-    ...
-)
-```
-
----
-
-## Summary
-
-| Feature | Description |
-|---------|-------------|
-| **Multi-frequency merge** | Annual → Monthly, Quarterly → Daily, etc. |
-| **Point-in-time** | `time_offset_months` prevents look-ahead bias |
-| **Variable namespacing** | `prefix`/`suffix` avoid collisions |
-| **Flexible selection** | `variables` and `drop_vars` control what's merged |
-| **Join types** | LEFT, RIGHT, INNER, OUTER |
-| **Fill strategies** | FFILL, BFILL, NEAREST, EXACT, AS_OF |
-| **Pure xarray** | No pandas in the merge logic |
-
-The `DatasetMerger` is the foundation for building complex multi-source pipelines like Fama-French factor construction, where CRSP returns, Compustat fundamentals, and other data sources must be combined with proper time alignment.
+- [PIPELINE_SYSTEM.md](./PIPELINE_SYSTEM.md) for how merges fit into a full pipeline spec
+- [ARCHITECTURE.md](./ARCHITECTURE.md) for the wider system model and stage boundaries
+- [INDEX.md](./INDEX.md) for the documentation map
 
