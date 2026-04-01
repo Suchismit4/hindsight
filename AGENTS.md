@@ -9,7 +9,7 @@ Core doctrine:
 - Minimal API surface.
 - Preserve behavior unless a path/import fix is required.
 - Optimize for generic quant primitives, not one workflow.
-- `dev/examples/ff3_model.yaml` (local `dev/` tree) is an example pipeline, not a design constraint.
+- [`examples/pipeline_specs/crypto_momentum_baseline.yaml`](examples/pipeline_specs/crypto_momentum_baseline.yaml) is the tracked minimal pipeline example; richer local demos may live under `dev/examples/`. Neither is a design constraint.
 
 Canonical data flow:
 `provider -> from_table() -> xr.Dataset(year, month, day, hour, asset) -> .dt -> FormulaManager/DataHandler -> walk-forward/model`
@@ -25,7 +25,7 @@ Canonical data flow:
    - [`src/pipeline/data_handler/processors.py`](src/pipeline/data_handler/processors.py)
    - [`src/pipeline/walk_forward/execution.py`](src/pipeline/walk_forward/execution.py)
    - [`src/pipeline/data_handler/merge.py`](src/pipeline/data_handler/merge.py)
-5. Example contract surface (local): `dev/examples/ff3_model.yaml`
+5. Example contract surface: [`examples/pipeline_specs/crypto_momentum_baseline.yaml`](examples/pipeline_specs/crypto_momentum_baseline.yaml); optional local `dev/examples/ff3_model.yaml` for factor-style workflows.
 
 ## Resume Locations
 Use these for interrupted missions and transient execution state (local / gitignored):

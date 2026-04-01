@@ -37,10 +37,11 @@ walk-forward evaluation.
 
 ## Examples
 
-Example scripts and YAML specs live under `dev/examples/` in a local checkout (that tree is not version-controlled). Use them as runnable references:
+**Tracked (minimal):** see [`examples/README.md`](examples/README.md).
 
-- `dev/examples/run_pipeline_example.py` — end-to-end cached pipeline run with the bundled crypto specs.
-- `dev/examples/ff3_model.yaml` — factor-construction workflow on WRDS data (illustrative of the pipeline system, not the architectural center of the library).
+- [`examples/run_minimal_example.py`](examples/run_minimal_example.py) — runs [`examples/pipeline_specs/crypto_momentum_baseline.yaml`](examples/pipeline_specs/crypto_momentum_baseline.yaml) twice to demonstrate caching.
+
+**Local `dev/examples/`** (gitignored) can hold larger demos: multi-spec cache walkthrough (`run_pipeline_example.py`), `ff3_model.yaml` on WRDS, and other scratch.
 
 ## What The Repo Emphasizes
 

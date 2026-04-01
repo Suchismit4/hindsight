@@ -191,8 +191,8 @@ model:
     step_hours: 24
 ```
 
-That pipeline is used directly by `dev/examples/run_pipeline_example.py` (local
-`dev/` tree; gitignored).
+That pipeline is exercised by [`examples/run_minimal_example.py`](../examples/run_minimal_example.py)
+and the full multi-spec walkthrough in `dev/examples/run_pipeline_example.py` (local `dev/` tree).
 
 ### A factor-style pipeline without a model
 

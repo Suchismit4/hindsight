@@ -21,11 +21,12 @@ library.
 
 ## Example Entry Points
 
-Example scripts and YAML live under `dev/examples/` in a local checkout (that directory is gitignored). Entry points:
+**Tracked (clone-friendly):**
 
-- `dev/examples/run_pipeline_example.py` — bundled crypto pipeline examples and cache reuse.
-- `dev/examples/pipeline_specs/crypto_momentum_baseline.yaml` — smallest end-to-end modeling example.
-- `dev/examples/ff3_model.yaml` — factor-construction workflow over CRSP and Compustat inputs.
+- [`examples/run_minimal_example.py`](../examples/run_minimal_example.py) — minimal runner; see [`examples/README.md`](../examples/README.md).
+- [`examples/pipeline_specs/crypto_momentum_baseline.yaml`](../examples/pipeline_specs/crypto_momentum_baseline.yaml) — smallest end-to-end modeling spec.
+
+**Local `dev/examples/`** (gitignored): multi-spec cache demo (`run_pipeline_example.py`), `ff3_model.yaml`, and other extended samples.
 
 ## How To Read The Docs
 

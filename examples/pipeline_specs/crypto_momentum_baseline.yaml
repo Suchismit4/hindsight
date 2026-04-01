@@ -1,0 +1,86 @@
+spec_version: "1.0"
+name: "crypto_momentum_baseline"
+version: "1.0"
+
+# Global time range for data loading
+time_range:
+  start: "2023-01-01"
+  end: "2023-12-31"
+
+# Data sources - specify what data to load
+data:
+  crypto_prices:
+    provider: "crypto"
+    dataset: "spot/binance"
+    frequency: "H"
+    filters: {}
+    processors: []
+
+# Feature engineering - compute technical indicators
+features:
+  operations:
+    - name: "momentum_indicators"
+      formulas:
+        # Simple moving averages
+        sma:
+          - {window: 20}
+          - {window: 50}
+
+        # Exponential moving averages
+        ema:
+          - {window: 12}
+          - {window: 26}
+
+        # Relative strength index
+        rsi:
+          - {window: 14}
+
+# Preprocessing - normalize and clean data
+preprocessing:
+  mode: "independent"
+
+  # Shared processors applied to all data
+  shared:
+    - type: "per_asset_ffill"
+      name: "forward_fill"
+      vars: ["close", "volume"]
+
+  # Learn processors - fit on training data
+  learn:
+    - type: "cs_zscore"
+      name: "normalizer"
+      vars: ["close", "volume", "sma_ww20", "sma_ww50", "ema_ww12", "ema_ww26"]
+      out_suffix: "_norm"
+
+# Model training - predict future returns using walk-forward validation
+model:
+  adapter: "sklearn"
+  type: "LinearRegression"  # sklearn.linear_model.LinearRegression
+  params:
+    fit_intercept: true
+  features:
+    - "close_norm"
+    - "volume_norm"
+    - "sma_ww20_norm"
+    - "sma_ww50_norm"
+    - "ema_ww12_norm"
+    - "ema_ww26_norm"
+  target: "close"
+  walk_forward:
+    train_span_hours: 120  # 5 days training window
+    infer_span_hours: 24   # 1 day inference window
+    step_hours: 24         # 1 day step forward
+    gap_hours: 0           # No gap between train/infer
+    start: "2020-01-22 18:00:00"
+    end: "2023-12-01 00:00:00"
+  adapter_params:
+    output_var: "close_pred"
+    use_proba: false
+  runner_params:
+    overlap_policy: "last"  # Use last prediction for overlapping periods
+
+# Metadata for documentation
+metadata:
+  description: "Baseline crypto momentum strategy using linear regression"
+  author: "Hindsight Team"
+  tags: ["crypto", "momentum", "linear"]

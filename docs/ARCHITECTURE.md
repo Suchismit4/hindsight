@@ -125,9 +125,11 @@ on load.
 ### What is and is not central
 
 The repository supports factor-style and portfolio-style workflows, but the
-architecture is not centered on any single example. `dev/examples/ff3_model.yaml`
-is useful because it exercises merges, formulas, infer-stage processors, and
-portfolio outputs. It is still an example, not a special-case architecture path.
+architecture is not centered on any single example. The tracked
+`examples/pipeline_specs/crypto_momentum_baseline.yaml` walks a simple modeled
+pipeline end-to-end. Local `dev/examples/ff3_model.yaml` is useful because it
+exercises merges, formulas, infer-stage processors, and portfolio outputs. Each
+remains an example, not a special-case architecture path.
 
 ## Practical Examples
 
@@ -136,7 +138,7 @@ portfolio outputs. It is still an example, not a special-case architecture path.
 The bundled crypto example touches most of the main layers:
 
 ```text
-dev/examples/pipeline_specs/crypto_momentum_baseline.yaml
+examples/pipeline_specs/crypto_momentum_baseline.yaml
     -> PipelineSpec parsing
     -> single-source load through DataManager
     -> formula operations
