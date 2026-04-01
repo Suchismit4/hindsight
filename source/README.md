@@ -1,70 +1,54 @@
-# Hindsight Pipeline Framework Documentation
+# Hindsight Sphinx documentation
 
-This directory contains the Sphinx documentation for the Hindsight Pipeline Framework.
+This directory is the Sphinx source for the Hindsight docs (`*.rst` under `source/`).
 
-## Building the Documentation
+## Prerequisites
 
-To build the HTML documentation:
+Work in the **jax** conda environment:
 
-1. Activate the conda environment with Sphinx installed:
-   ```bash
-   conda activate jax
-   ```
+```bash
+conda activate jax
+```
 
-2. Build the documentation:
-   ```bash
-   make html
-   ```
+Install Sphinx and the Read the Docs theme once in that env (if not already installed):
 
-3. Serve the documentation locally (recommended for VM/remote development):
-   ```bash
-   python3 serve_docs.py
-   ```
-   This will start a local HTTP server on port 8000. VS Code will automatically port-forward the URL for viewing in your browser.
+```bash
+pip install sphinx sphinx-rtd-theme
+```
 
-   Alternatively, you can open the documentation directly:
-   ```bash
-   python3 open_docs.py
-   ```
+## Build HTML
 
-The generated documentation will be available in `build/html/index.html`.
+From the **repository root** (not `source/`):
 
-## Documentation Structure
+```bash
+conda activate jax
+cd /path/to/hindsight
+PYTHONPATH=. sphinx-build -b html source build/html
+```
 
-### Getting Started Guide
-- **Overview**: Framework architecture and core principles
-- **Data Loading**: Using DataManager to load financial datasets
-- **Data Handler**: Configuring and using the data processing pipeline
-- **Feature Engineering**: Working with processors and formula evaluation
-- **Walk-Forward Analysis**: Temporal segmentation and robust backtesting
-- **Model Integration**: Integrating ML models with the pipeline
-- **Execution and Analysis**: Running complete workflows and analyzing results
+`PYTHONPATH=.` is required so autodoc can import `src.*` (including JAX-backed code).
 
-### API Reference
-- **Pipeline API**: Main entry point and core classes
-- **Data Handler API**: Data processing pipeline components
-- **Walk-Forward API**: Temporal segmentation and execution
-- **Model API**: Model integration and adapters
+Open the site:
 
-### Examples
-- **Complete Workflow**: End-to-end example following `example.py`
+```bash
+xdg-open build/html/index.html   # Linux
+# or open build/html/index.html in a browser
+```
 
-## Key Features Highlighted
+## Live preview (optional)
 
-The documentation focuses on the high-level abstractions and public API that users need to understand:
+Serve the built HTML on a port:
 
-- **Separation of "How" and "When"**: Clear distinction between data processing and temporal logic
-- **Three-Stage Processing**: Shared, learn, and infer processor stages
-- **Temporal Validity**: Prevention of lookahead bias through proper state management
-- **Walk-Forward Analysis**: Robust backtesting with configurable temporal segments
-- **Model Integration**: Seamless integration of ML models with the pipeline
+```bash
+conda activate jax
+cd /path/to/hindsight
+python -m http.server 8000 --directory build/html
+```
 
-## Areas Not Covered (Marked as TBA)
+Then open `http://localhost:8000/`.
 
-The documentation intentionally avoids implementation details that are "under the hood":
-- AST system internals and formula evaluation implementation
-- Data module internals (loaders, processors, core operations)
-- Backtester implementation details
-- Rolling operations and masking specifics
+## Documentation layout
 
-These topics may be covered in future detailed developer documentation.
+- **Getting started**: `source/getting_started/` (overview, data loading, YAML pipeline, handlers, features, walk-forward, models, execution).
+- **Examples**: `source/examples/`.
+- **API**: `source/api/` (autosummary + autodoc into `source/api/generated/`).
