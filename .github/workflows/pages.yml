@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # graphviz Python package shells out to the `dot` binary for rendering
+      - name: Install Graphviz binaries
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -30,9 +34,13 @@ jobs:
           cache-dependency-path: requirements-docs.txt
 
       - name: Install documentation dependencies
-        run: pip install -r requirements-docs.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-docs.txt
 
       - name: Build Sphinx HTML
+        env:
+          MPLBACKEND: Agg
         run: PYTHONPATH=. sphinx-build -b html source build/html
 
       - uses: actions/upload-pages-artifact@v3

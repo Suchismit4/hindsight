@@ -1,16 +1,41 @@
-# Sphinx + runtime deps for autodoc on GitHub Actions (CPU JAX; no CUDA wheels).
-# Keeps CI separate from requirements.txt (GPU stack).
-# xarray-jax (import xarray_jax) pins jax/xarray/equinox; keep ranges aligned.
+# Sphinx + full runtime deps for autodoc (imports src.* transitively).
+# Separate from requirements.txt (GPU/CUDA stack). Keep xarray-jax pins satisfied.
+#
+# Import audit (direct third-party modules used under src/):
+#   jax, jax.numpy, jax.tree_util  |  equinox  |  xarray, xarray_jax  |  numpy  |  pandas
+#   yaml (PyYAML)  |  jsonschema  |  tqdm  |  threadpoolctl  |  pyreadstat
+#   dateutil (python-dateutil)  — WRDS compustat
+#   graphviz, matplotlib, PIL (pillow)  — src.data.ast pulls visualization
+#   sklearn (scikit-learn)  — executor dynamic import; sklearn transitive deps (scipy, joblib) via pip
+#
+# Optional / not required for autodoc (guarded try/except or lazy use):
+#   openbb  — src.data.loaders.open_bb (ImportError -> placeholder in loaders/__init__.py)
+#   numba   — backtester/core.py
+#   netcdf4 — only if xarray.to_netcdf(..., engine="netcdf4") runs (not at import time)
+
+# --- Sphinx ---
 sphinx>=7,<9
 sphinx-rtd-theme>=2,<4
+
+# --- JAX / xarray (must satisfy xarray-jax) ---
 jax[cpu]>=0.4.33,<0.5.0
 equinox>=0.11.7,<0.12.0
 xarray>=2024.9.0,<2025.0.0
 xarray-jax>=0.0.5
+
+# --- Core stack ---
 numpy>=1.26,<3
 scipy>=1.11
 pandas>=2
+python-dateutil>=2.8
 PyYAML>=6
+
+# --- src.data.ast.visualization (imported from src.data.ast package) ---
+graphviz>=0.20
+matplotlib>=3.7,<4
+pillow>=10
+
+# --- Pipeline / loaders / autodoc rest ---
 scikit-learn>=1.3
 jsonschema>=4
 tqdm>=4
