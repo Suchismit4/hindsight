@@ -433,7 +433,7 @@ class Broker:
                 total_commission += actual_commission
                 
                 # Update order with execution details
-                self._update_market_order(order, _execution_price, executed_quantity, execution_timestamp)
+                self._update_market_order(order, _execution_price, executed_quantity)
                 
                 # Log trade execution
                 fill_status = "FULL" if executed_quantity == requested_quantity else "PARTIAL"
@@ -454,7 +454,7 @@ class Broker:
                 total_commission += actual_commission
                 
                 # Update order with execution details
-                self._update_market_order(order, _execution_price, executed_quantity, execution_timestamp)
+                self._update_market_order(order, _execution_price, executed_quantity)
                 
                 # Log trade execution
                 position_status = "SHORT" if new_position < 0 else "LONG" if new_position > 0 else "FLAT"

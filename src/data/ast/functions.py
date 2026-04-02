@@ -183,8 +183,6 @@ def register_function(
     
     # Otherwise, this is the @register_function(name=...) form
     def decorator(func: Callable) -> Callable:
-        nonlocal func_or_name
-        
         # Use the provided name or fall back to the function name
         actual_name = func_or_name if isinstance(func_or_name, str) else func.__name__
         
