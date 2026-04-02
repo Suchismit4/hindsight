@@ -1,0 +1,18 @@
+# Sphinx + runtime deps for autodoc on GitHub Actions (CPU JAX; no CUDA wheels).
+# Keeps CI separate from requirements.txt (GPU stack).
+sphinx>=7,<9
+sphinx-rtd-theme>=2,<4
+jax[cpu]>=0.4.30
+equinox>=0.11
+numpy>=1.26,<3
+scipy>=1.11
+pandas>=2
+xarray>=2024.1
+PyYAML>=6
+scikit-learn>=1.3
+jsonschema>=4
+tqdm>=4
+threadpoolctl>=3
+pyreadstat>=1.2
+packaging
+typing_extensions
